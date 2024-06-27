@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div>Иванов Иван Иванович</div>
+    <a href="https://example.com" target="_blank">Мой любимый сайт</a>
+    <img src="https://via.placeholder.com/150" alt="Пример изображения">
+    <button onclick="swapElements()">Переместить</button>
+    <button onclick="styleElement()">Стилизовать и Переместить</button>
+    
+    <form id="myForm" action="/submit_form" method="post" enctype="multipart/form-data">
+        <h2><span style="color: rgb(150, 0, 0);">Форма обратной связи</span></h2>
+        <div class="form-grid">
+            <label for="first-name">Ваше имя<span style="color: red;">*</span></label>
+            <input type="text" id="first-name" name="firstName" required>
+    
+            <label for="last-name">Ваша фамилия<span style="color: red;">*</span></label>  
+            <input type="text" id="last-name" name="lastName" required>
+    
+            <label for="city">Город</label>
+            <input type="text" id="city" name="city">
+    
+            <label for="email">E-mail</label>
+            <input type="email" id="email" name="email">
+    
+            <label for="mobile-phone">Мобильный телефон</label>
+            <div class="fhone-container">
+                <label for="mobile-phone" style="display: grid; align-items: center;">+375</label>
+                <input type="tel" id="kodmobile-phone" name="kodmobilePhone" maxlength="2" placeholder="29">
+                <input type="tel" id="mobile-phone" name="mobilePhone">
+            </div>
+        
+            <label for="home-phone">Домашний телефон</label>
+            <div class="fhone-container">
+                <label for="mobile-phone" style="display: grid; align-items: center;">+375</label>
+                <input type="tel" id="kodhome-phone" name="kodhomePhone" maxlength="2" placeholder="29">
+                <input type="tel" id="home-phone" name="homePhone">
+            </div>
+            
+    
+            <label for="category">Категория обращения</label>
+            <select id="category" name="category">
+                <option value="site-work">работа сайта</option>
+                <option value="team-work">работа консультантов</option>
+                <option value="travel-work">работа доставки</option>
+            </select>
+    
+            <label for="store-address">Адрес магазина, где была осуществлена покупка.</label>
+            <input type="text" id="store-address" name="storeAddress">
+    
+            <label for="order-number">Номер веб-заказа</label>
+            <input type="text" id="order-number" name="orderNumber">
+    
+            <label for="message">Текст сообщения<span style="color: red;">*</span></label>
+            <textarea id="message" name="message" required></textarea>
+    
+            <label for="file-upload">Прикрепить файлы (до 1 Мб)</label>
+            <input type="file" id="file-upload" name="fileUpload" accept=".pdf, .doc, .docx, .txt, .jpg, .jpeg, .png">
+            
+            <div class="above-button">* - Поля, обязательные для заполнения</div>
+            <div class="button-container">
+                <button type="submit">Отправить</button>
+                <button type="reset">Сбросить</button>
+            </div>
+        </div>
+    </form>
+
+    <script src="script.js"></script>
+</body>
+</html>

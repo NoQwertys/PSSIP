@@ -1,0 +1,165 @@
+body, html {
+    font-family: Arial, sans-serif;
+    box-sizing: border-box;
+}
+
+.hr1 {
+  color: red; 
+  width: 70%; 
+  margin-bottom: 2%;
+}
+
+.hr2 {
+  margin-top: 10%;
+}
+
+form {
+  width: 70%;
+  margin: 20px 20%;
+  font-family: Arial, sans-serif;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 3fr; 
+  gap: 10px;
+  align-items: center;
+}
+
+label {
+  padding-right: 10px;
+  text-align: left; 
+}
+
+input[type="text"], input[type="email"], input[type="tel"], textarea, select, input[type="file"] {
+  width: 60%;
+  padding: 8px;
+  border-radius: 5px; 
+}
+
+input[type="tel"]{
+  flex-grow: 1;
+}
+
+input[id="kodmobile-phone"], input[id="kodhome-phone"]{
+  min-width: 15px;
+  width: 4%;
+  flex-grow: 0;
+}
+
+.fhone-container {
+  gap: 5px;
+  width: 61.7%;
+  display: flex; 
+  justify-content: start; 
+
+}
+
+select{
+  width: 61.7%;
+}
+
+textarea {
+  height: 80px; 
+}
+
+.button-container {
+  display: flex; 
+  justify-content: start; 
+  grid-column: 2 / 3;
+  gap: 10px;
+}
+
+button {
+  grid-column: 2; 
+  width: 20%; 
+  padding: 13px;
+  cursor: pointer;
+  border-radius: 10px; 
+}
+
+.above-button {
+  display: flex;
+  color: red;
+  grid-column: 2 / 3;
+  font-style: italic;
+}
+
+.container {  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  
+  gap: 0px 0px;
+  margin-left: 15%;
+  grid-auto-flow: row;
+  grid-template-areas:
+    "img name name"
+    "img name name"
+    "img text text";
+}
+
+.text { grid-area: text; }
+
+.img { grid-area: img; }
+
+.name { grid-area: name; }
+
+img {
+  margin-top: 50px;
+  width: 80%;
+  height: 100%;
+}
+
+.price {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.old-price {
+  font-size: 18px;
+  color: grey;
+  text-decoration: line-through;
+}
+
+.new-price {
+  font-size: 40px;
+  color: rgb(0, 0, 0);
+  text-decoration: none;
+}
+
+.quantity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.add-to-cart {
+  background-color: red;
+  border-radius: 0;
+  color: white;
+  border-color: red;
+  width: 40%;
+}
+
+.buy-now {
+  background-color: white; 
+  border-radius: 0;
+  border-color: red;
+  width: 40%;
+}
+
+.description {
+  font-size: 16px;
+  color: #9d9d9d;
+  max-width: 60%;
+}
+
+.description1 {
+  font-size: 24px;
+  color: #9d9d9d;
+}
+
+.button-container2 {
+  width: 60%;
+  margin-top: 50px;
+}

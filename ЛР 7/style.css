@@ -1,0 +1,67 @@
+body, html {
+    font-family: Arial, sans-serif;
+    box-sizing: border-box;
+}
+
+.container {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr); 
+  gap: 10px; 
+  height: 98vh;
+}
+
+.full-width, .half-width, .eighth-width, .fourth-width {
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.full-width {
+  grid-column: 1 / -1; 
+  background-color: lightblue;
+  padding: 20px;
+  text-align: center;
+}
+
+.half-width {
+  grid-column: span 4;
+  background-color: lightgreen;
+  padding: 20px;
+  text-align: center;
+}
+
+.eighth-width {
+  grid-column: span 1; 
+  background-color: lightcoral;
+  padding: 20px;
+  text-align: center;
+}
+
+.fourth-width {
+  grid-column: span 2; 
+  background-color: orange;
+  padding: 20px;
+  text-align: center;
+}  
+
+
+@media (max-width: 1000px) {
+  .container {
+      grid-template-columns: repeat(2, 1fr); /* Меняем на 2 колонки */
+  }
+
+  .half-width, .eighth-width, .fourth-width {
+      grid-column: span 1; /* Каждый блок занимает одну колонку */
+  }
+}
+
+@media (max-width: 600px) {
+  .container {
+      grid-template-columns: 1fr; /* Все блоки в одну колонку */
+  }
+
+  .full-width, .half-width, .eighth-width, .fourth-width {
+      grid-column: span 1; /* Все блоки занимают всю ширину */
+  }
+}

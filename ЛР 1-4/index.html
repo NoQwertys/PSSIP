@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Страница 1</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+        li {
+            margin-bottom: 10px;
+        }
+        a {
+            text-decoration: none;
+            color: blue;
+        }
+        a:hover {
+            text-decoration: underline;
+            color: #000000;
+        }
+        table {
+            border-collapse: collapse;
+            width: 50%;
+            margin-bottom: 100pc;
+        }
+        td, th {
+            border: 1px solid #000000;
+            padding: 8px;
+            background-color: #d4bd82;
+            color: blue;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        img {
+            border-radius: 50px;
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Первая страница</h1>
+    <ul>
+        <li><a href="#text-formatting">Оформление текста</a></li>
+        <li><a href="#tables">Таблицы</a></li>
+        <li><a href="#images">Изображения</a></li>
+    </ul>
+
+    <h2 id="text-formatting">Оформление текста</h2>
+    <p>Пример текста с <em>курсивом</em>, <u>подчеркнутый</u>, <del>перечеркнутый</del> и другими стилями.</p>
+
+    <h2 id="tables">Таблицы</h2>
+    <table>
+        <tr>
+            <td rowspan="2">Ячейка 1</td>
+            <td colspan="2">Ячейка 2</td>
+        </tr>
+        <tr>
+            <td>Ячейка 3</td>
+            <td>Ячейка 4</td>
+        </tr>
+    </table>
+    
+    <h2 id="images">Изображения</h2>
+    <img src="фото.png" alt="Пример изображения" width="600" height="320">
+    <p></p>
+    <a href="page2.html">Страница 2</a>
+
+
+    <button id="toggleMusicButton">Выключить музыку</button>
+    <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.5" style="width: 100px;">
+    <audio id="backgroundMusic" src="1.mp3" autoplay loop></audio>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const music = document.getElementById('backgroundMusic');
+            const toggleButton = document.getElementById('toggleMusicButton');
+            const volumeControl = document.getElementById('volumeControl');
+
+            toggleButton.addEventListener('click', function() {
+                if (music.paused) {
+                    music.play();
+                    toggleButton.textContent = 'Выключить музыку';
+                } else {
+                    music.pause();
+                    toggleButton.textContent = 'Включить музыку';
+                }
+            });
+
+            volumeControl.addEventListener('input', function() {
+                music.volume = volumeControl.value;
+            });
+        });
+    </script>
+</body>
+</html>

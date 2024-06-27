@@ -1,0 +1,69 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    
+    font-family: Arial, sans-serif;
+}
+
+div {
+    display: flex;
+}
+
+.main {
+    flex-direction: column;
+    background-color: white;
+    color: white;
+    height: 1000px;
+    width: 2000px;
+}
+
+.c1, .c2,.c3,.c4,.c5,.c6 {
+    height: 250px;
+}
+
+.c11,.c12 {
+    width: 1000px;
+    padding: 15px;
+    background-color: black;
+    margin: 10px;
+}
+
+.c2 {
+    padding: 15px;
+    background-color: black;
+    margin: 10px;
+}
+
+.c31,.c32,.c33,.c34,.c41,.c42,.c51,.c52,.c61,.c62{
+    width: 448px;
+    padding: 15px;
+    background-color: black;
+    margin: 10px;
+}
+
+
+
+.c4 {
+    flex-direction: row-reverse;
+}
+
+.c41 {
+    width: 948px;
+}
+
+.c6 {
+    justify-content: center;
+}
+
+.head, .end {
+    background-color: #35f42b;
+    padding: 15px;
+    color: black;
+    align-items: center;
+    justify-content: center;
+    height: 100px;
+}
+
+@media (max-width: 700px) {
+
+}

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Микросетка</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <form action="/submit_form" method="post" enctype="multipart/form-data">
+        <h2><span style="color: rgb(150, 0, 0);">Форма обратной связи</span></h2>
+        <div class="form-grid">
+            <label for="first-name">Ваше имя<span style="color: red;">*</span></label>
+            <input type="text" id="first-name" name="firstName" required>
+    
+            <label for="last-name">Ваша фамилия<span style="color: red;">*</span></label>  
+            <input type="text" id="last-name" name="lastName" required>
+    
+            <label for="city">Город</label>
+            <input type="text" id="city" name="city">
+    
+            <label for="email">E-mail</label>
+            <input type="email" id="email" name="email">
+    
+            <label for="mobile-phone">Мобильный телефон</label>
+            <div class="fhone-container">
+                <label for="mobile-phone" style="display: grid; align-items: center;">+375</label>
+                <input type="tel" id="kodmobile-phone" name="kodmobilePhone" maxlength="2" placeholder="29">
+                <input type="tel" id="mobile-phone" name="mobilePhone">
+            </div>
+        
+            <label for="home-phone">Домашний телефон</label>
+            <div class="fhone-container">
+                <label for="mobile-phone" style="display: grid; align-items: center;">+375</label>
+                <input type="tel" id="kodhome-phone" name="kodhomePhone" maxlength="2" placeholder="29">
+                <input type="tel" id="home-phone" name="homePhone">
+            </div>
+            
+    
+            <label for="category">Категория обращения</label>
+            <select id="category" name="category">
+                <option value="site-work">работа сайта</option>
+                <option value="team-work">работа консультантов</option>
+                <option value="travel-work">работа доставки</option>
+            </select>
+    
+            <label for="store-address">Адрес магазина, где была осуществлена покупка.</label>
+            <input type="text" id="store-address" name="storeAddress">
+    
+            <label for="order-number">Номер веб-заказа</label>
+            <input type="text" id="order-number" name="orderNumber">
+    
+            <label for="message">Текст сообщения<span style="color: red;">*</span></label>
+            <textarea id="message" name="message" required></textarea>
+    
+            <label for="file-upload">Прикрепить файлы (до 1 Мб)</label>
+            <input type="file" id="file-upload" name="fileUpload" accept=".pdf, .doc, .docx, .txt, .jpg, .jpeg, .png">
+            
+            <div class="above-button">* - Поля, обязательные для заполнения</div>
+            <div class="button-container">
+                <button type="submit">Отправить</button>
+                <button type="reset">Сбросить</button>
+            </div>
+        </div>
+    </form>
+    <hr class="hr1">
+    <div class="container">
+        <div class="text">
+            <p class="description1">Описание</p>
+            <p class="description">
+                Впустите в свой дом немного природной красоты с домашним вечнозеленым растением в горшке.
+                Растение идеально подходит для офиса и дома, не требует особенного ухода и всегда радует глаз.
+                Заведите дома что-то простое, вместе с домашним растением в горшке.
+            </p>
+        </div>
+        <div class="img">
+            <img src="izo.jpg" alt="Домашнее растение в горшке">
+        </div>
+        <div class="name">
+            <h1>Домашнее растение в горшке</h1>
+                <div class="price">
+                    <p class="old-price">2500 руб.</p>
+                    <p class="new-price">1900 руб.</p>
+                </div>
+                <div class="quantity">
+                    <input type="number" id="quantity" name="quantity" min="1" max="10" value="1">
+                    <span>10 в наличии</span>
+                </div>
+                <div class="button-container2">
+                    <button class="add-to-cart">В корзину</button>
+                    <button class="buy-now">Купить сразу</button>
+                    <hr class="hr2">
+                </div>
+            </div>
+      </div>
+</body>
+</html>

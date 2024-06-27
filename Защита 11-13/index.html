@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Date Display</title>
+    <script src="script.js"></script>
+    <script>
+        function showCurrentDay() {
+            const today = new Date();
+            const day = today.getDate();
+            alert("Сегодня " + day + " число месяца.");
+        }
+    </script>
+</head>
+<body>
+    <hr>
+    <button onclick="showCurrentDay()">Показать</button><br>
+    <hr>
+    <script>
+        var name = "Беспалов Тимофей";  
+        var n = 4; 
+        var count = n + 5;
+        var i = 0;
+        do {
+            document.write(name + "<br>");
+            i++;
+        } while (i < count);
+    </script>
+    <hr>
+    <script>
+        var arr = [10, 5, 13, 8, 2, 6];
+
+        document.write("Оригинальный массив: " + arr.join(", ") + "<br>");
+
+        var filtedArr = arr.filter(n => n % 2 == 0);
+        var Sum = filtedArr.reduce((a, n) => a + n, 0)
+
+        var sortedArr = arr.sort();
+
+        document.write("Отсортированный массив: " + sortedArr.join(", ") + "<br>");
+
+        document.write("Сумма четных: " + Sum + "<br>");
+    </script>
+    <hr>
+    <input type="number" id="inputA" placeholder="Введите a">
+    <input type="number" id="inputX" placeholder="Введите x">
+    <button onclick="performCalculation()">Рассчитать</button>
+    <p id="resultDisplay"></p>
+
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Каскадность таблиц стилей прописывается здесь -->
+    <!-- Внешняя таблица стилей -->
+    <link rel="stylesheet" href="style.css">
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Страница 1</title>
+    
+    <!-- Стили, импортированные внутри глобального стиля -->
+    <style>
+    @import url('another.css');
+    </style>
+
+    <!-- Глобальные стили добавляются непосредственно в HTML и могут переопределять внешние */ -->
+    <style>
+        .center-div
+        {
+            display: block; 
+            background-color: green;
+            width: 200pt;  
+            height: 250pt; 
+            margin: 0 auto; 
+        }
+        </style>
+    </head>
+<body>
+    <p>Беспалов Тимофей Страниславович</p>
+    <!-- Внутренние стили в элементах HTML имеют самый наивысший приоритет, который переопределяет все другие -->
+    <h5 style="color: red; text-align: right; text-decoration: underline;">ПЗТ-38</h5>
+    <div class="center-div">создание игр</div>
+    <a href="modular_village_collection.zip" download="modular_village_collection.zip">Скачать архив</a>
+    <div></div>
+</body>
+</html>

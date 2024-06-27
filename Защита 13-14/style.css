@@ -1,0 +1,77 @@
+body {
+    justify-items: center;
+    align-items: center;
+    margin: 0;
+    gap: 20px;
+}
+form {
+    width: 70%;
+    margin: 20px 20%;
+    font-family: Arial, sans-serif;
+  }
+  
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 3fr; 
+    gap: 10px;
+    align-items: center;
+  }
+  
+  label {
+    padding-right: 10px;
+    text-align: left; 
+  }
+  
+  input[type="text"], input[type="email"], input[type="tel"], textarea, select, input[type="file"] {
+    width: 60%;
+    padding: 8px;
+    border-radius: 5px; 
+  }
+  
+  input[type="tel"]{
+    flex-grow: 1;
+  }
+  
+  input[id="kodmobile-phone"], input[id="kodhome-phone"]{
+    min-width: 15px;
+    width: 4%;
+    flex-grow: 0;
+  }
+  
+  .fhone-container {
+    gap: 5px;
+    width: 61.7%;
+    display: flex; 
+    justify-content: start; 
+  
+  }
+  
+  select{
+    width: 61.7%;
+  }
+  
+  textarea {
+    height: 80px; 
+  }
+  
+  .button-container {
+    display: flex; 
+    justify-content: start; 
+    grid-column: 2 / 3;
+    gap: 10px;
+  }
+  
+  button {
+    grid-column: 2; 
+    width: 20%; 
+    padding: 13px;
+    cursor: pointer;
+    border-radius: 10px; 
+  }
+  
+  .above-button {
+    display: flex;
+    color: red;
+    grid-column: 2 / 3;
+    font-style: italic;
+  }

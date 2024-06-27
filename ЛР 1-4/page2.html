@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Страница 2</title>
+</head>
+<body>
+    <h1>Вторая страница</h1>
+    <ul>
+        <li><a href="#media-content">Аудио и видео-контент</a></li>
+        <li><a href="#user-forms">Пользовательские формы</a></li>
+        <li><a href="#special-characters">Спецсимволы</a></li>
+    </ul>
+
+    <h2 id="media-content">Аудио и видео-контент</h2>
+    <h3>Любимые фильмы:</h3>
+    <video controls>
+        <source src="YellowFire2022.mp4" type="video/mp4">
+    </video>
+
+    <h3>Любимые исполнители:</h3>
+    <audio controls>
+        <source src="YellowFire2022.mp3" type="audio/mpeg">
+        Your browser does not support the audio tag.
+    </audio>
+
+    <h2 id="user-forms">Пользовательские формы</h2>
+    <h3>Регистрация</h3>
+    <form action="regestration.php" method="post">
+        <label for="username">Имя пользователя:</label><br>
+        <input type="text" id="username" name="username" required><br>
+        <label for="email">Email:</label><br>
+        <input type="email" id="email" name="email" required><br>
+        <label for="password">Пароль:</label><br>
+        <input type="password" id="password" name="password" required><br>
+        <input type="submit" value="Зарегистрироваться"><br>
+        <input name="reset" type="reset" value="Очистить">
+    </form>
+    <form method="post">
+        <h3>Различные кнопки</h3>
+        <label>Выпадающий список</label><br>
+        <select name="form_select">
+            <option value="Значение 1">Первый</option>
+            <option value="Значение 2">Второй</option>
+            <option  selected="selected" value="Значение 3">Третий</option>
+            <option value="Значение 4">Четвертый</option>
+            <option value="Значение 5">Пятый</option>
+        </select>
+
+        <p>Какие музыкальные жанры Вы любите?</p>
+        <ol>
+            <li><input type="checkbox" name="musik" value="juze" checked>Джаз</li>
+            <li><input type="checkbox" name="musik" value="bluse" checked>Блюз</li>
+            <li><input type="checkbox" name="musik" value="rock">Рок</li>
+            <li><input type="checkbox" name="musik" value="shanson">Шансон</li>
+            <li><input type="checkbox" name="musik" value="kantry">Кантри</li>
+        </ol>
+
+        <p>Сколько Вам лет?</p>
+        <ol>
+            <li><input type="radio" name="age" value="18" checked>младше 18</li>
+            <li><input type="radio" name="age" value="18-24">от 18 до 24</li>
+            <li><input type="radio" name="age" value="25-34">от 25 до 35</li>
+            <li><input type="radio" name="age" value="35-50">более 35</li>
+        </ol>
+        <input type="submit">
+        
+    </form>
+
+    <h2 id="special-characters">Спецсимволы</h2>
+    <p>Примеры спецсимволов: &lt;, &gt;, &amp;, &copy;, и так далее.</p>
+
+    <a href="index.html">На главную</a>
+    
+</body>
+</html>
