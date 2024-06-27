@@ -2,7 +2,7 @@
 function getLinkColor() {
     const link = document.querySelector('a');
     const linkColor = window.getComputedStyle(link).color;
-    console.log('Цвет гиперссылки:', linkColor);
+    alert('Цвет гиперссылки:', linkColor);
 }
 
 // Задание 2.2: Вывести информацию через 5 секунд после запуска страницы.
