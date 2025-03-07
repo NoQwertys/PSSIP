@@ -1,0 +1,30 @@
+#game td {
+	width: 20px;
+	height: 20px;
+	border: 1px solid black;
+}
+
+#game td.yellow {
+	background: yellow;
+}
+#game td.green {
+	background: green;
+}
+#game td.blue {
+	background: blue;
+}
+#game td.winner {
+	border: 1px solid red;
+}
+#winner {
+    margin-top: 10px;
+    font-size: 20px;
+    font-weight: bold;
+    color: red;
+}
+  
+#restart {
+    margin-top: 10px;
+    padding: 5px 10px;
+    font-size: 16px;
+}

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пользовательская форма</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+
+        h1 {
+            display: flex;
+            justify-content: center;
+        }
+        
+        form {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input[type="text"], input[type="email"], textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus, input[type="email"]:focus, textarea:focus {
+            border-color: #4caf50;
+            outline: none;
+        }
+
+        button {
+            background-color: #4caf50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .error {
+            color: red;
+            font-size: 12px;
+            margin-top: -8px;
+            margin-bottom: 10px;
+        }
+
+        .valid {
+            color: green;
+            font-size: 12px;
+            margin-top: -8px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Форма обратной связи</h1>
+    <form id="userForm">
+        <label for="name">Имя:</label>
+        <input type="text" id="name" name="name" required>
+        <span id="nameValidation" class="error"></span>
+        <br><br>
+
+        <label for="email">Почта:</label>
+        <input type="email" id="email" name="email" required>
+        <span id="emailValidation" class="error"></span>
+        <br><br>
+
+        <label for="question">Вопрос:</label>
+        <textarea id="question" name="question" required></textarea>
+        <span id="questionValidation" class="error"></span>
+        <br><br>
+
+        <button type="submit">Отправить</button>
+    </form>
+
+    <script>
+        function validateName() {
+            const name = document.getElementById('name').value;
+            const nameValidation = document.getElementById('nameValidation');
+            if (name === "") {
+                nameValidation.textContent = "Имя не может быть пустым!";
+                nameValidation.className = 'error';
+                return false;
+            } else {
+                nameValidation.textContent = "Формат корректен!";
+                nameValidation.className = 'valid';
+                return true;
+            }
+        }
+
+        function validateEmail() {
+        const email = document.getElementById('email').value;
+        const emailValidation = document.getElementById('emailValidation');
+
+        const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+        if (!emailPattern.test(email)) {
+            emailValidation.textContent = "Неверный формат почты!";
+            emailValidation.className = 'error';
+            return false;
+        } else {
+            emailValidation.textContent = "Формат почты корректен!";
+            emailValidation.className = 'valid';
+            return true;
+        }
+        }
+
+        function validateQuestion() {
+            const question = document.getElementById('question');
+            const questionValidation = document.getElementById('questionValidation');
+            if (!question.validity.valid) {
+                questionValidation.textContent = "Пожалуйста, введите вопрос!";
+                questionValidation.className = 'error';
+                return false;
+            } else {
+                questionValidation.textContent = "Формат вопроса корректен!";
+                questionValidation.className = 'valid';
+                return true;
+            }
+        }
+
+        document.getElementById('userForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const isNameValid = validateName();
+            const isEmailValid = validateEmail();
+            const isQuestionValid = validateQuestion();
+
+            if (isNameValid && isEmailValid && isQuestionValid) {
+                const name = document.getElementById('name').value;
+                const email = document.getElementById('email').value;
+                const question = document.getElementById('question').value;
+
+                const formData = {
+                    name: name,
+                    email: email,
+                    question: question
+                };
+
+                localStorage.setItem('userFormData', JSON.stringify(formData));
+
+                const savedData = JSON.parse(localStorage.getItem('userFormData'));
+                alert(`Имя: ${savedData.name}\nПочта: ${savedData.email}\nВопрос: ${savedData.question}`);
+
+                const result = document.createElement('p');
+                result.textContent = `Имя: ${savedData.name}, Почта: ${savedData.email}, Вопрос: ${savedData.question}`;
+                document.body.appendChild(result);
+            }
+        });
+
+        document.getElementById('name').addEventListener('input', validateName);
+        document.getElementById('email').addEventListener('input', validateEmail);
+        document.getElementById('question').addEventListener('input', validateQuestion);
+    </script>
+</body>
+</html>

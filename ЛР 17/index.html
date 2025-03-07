@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body onclick="alert('сюда всплытие не дойдёт')">
+    <!--Первое-->
+    <input value="Нажми на меня" onclick="alert('Клик!')" type="button">
+
+
+    <!--Второе-->
+    <input value="Считать кроликов!" onclick="countRabbits()" type="button">
+
+    <script>
+        function countRabbits(){
+            for(let i = 0; i <3; i++ ){
+                alert('Кролик номер ' + i);
+            }
+        };
+    </script>
+
+    <!--Третье-->
+    <input id="elem" value="Нажми на меня!" type="button">
+    <script>
+        elem.onclick = function(){
+            alert("Спасибо");
+        };
+    </script>
+
+    <!--Четвёртое-->
+    <button onclick="alert(this.innerHTML)">Нажми меня</button>
+
+    <!--Седьмое-->
+    <style>
+        body form *, body form{
+            margin: 10px;
+            border: 1px solid blue;
+        }
+    </style>
+
+    <form onclick="alert('form')">FORM
+        <div onclick="alert('div')">DIV
+            <p onclick="alert('p')">P</p>
+        </div>
+    </form>
+
+    <!--Восьмое-->
+    <button onclick="event.stopPropagation()">Кликни меня</button>
+
+    <br>
+
+    <!-- Задание 2 -->
+    <button id="myButton">Нажми меня</button>
+    <p id="mouseEventOutput">Ожидание</p>
+    <script>
+        document.getElementById("myButton").addEventListener("click", function() {
+        document.getElementById("mouseEventOutput").innerText = "Кнопка нажата!";
+      });
+    </script>
+
+    <p id="keyboardEventOutput">Нажата клавиша: </p>
+    <script>
+        document.body.addEventListener("keydown", function(event) {
+        document.getElementById("keyboardEventOutput").innerText = "Нажата клавиша: " + event.key;
+        }); 
+    </script>
+
+    <style>
+        body *{
+        margin: 32px 0;
+        font-size: 18px;
+        padding: 0;
+        font-family: Arial, sans-serif;
+        }       
+        #ball {
+        width: 50px;
+        height: 50px;
+        margin: 0;
+        background-color: red;
+        border-radius: 50%;
+        position: absolute;
+        top: 100px;
+        left: 100px;
+        cursor: pointer;
+        }
+    </style>
+
+    <div id="ball"></div>
+    <script>
+        const ball = document.getElementById('ball');
+    
+        ball.onmousedown = function(event) { // (1) отследить нажатие
+    
+        // (2) подготовить к перемещению:
+        ball.style.position = 'absolute';
+        ball.style.zIndex = 1000;
+    
+        // перемещаем мяч в body, чтобы он точно не находился в контейнере с position:relative
+        document.body.append(ball);
+    
+        // разместить мяч под курсор
+        moveAt(event.pageX, event.pageY);
+    
+        // (3) перемещаем мяч с учетом центра
+        function moveAt(pageX, pageY) {
+            ball.style.left = pageX - ball.offsetWidth / 2 + 'px';
+            ball.style.top = pageY - ball.offsetHeight / 2 + 'px';
+        }
+    
+        function onMouseMove(event) {
+            moveAt(event.pageX, event.pageY);
+        }
+    
+        // перемещаем мяч при движении мыши
+        document.addEventListener('mousemove', onMouseMove);
+    
+        // (4) отпустить мяч
+        ball.onmouseup = function() {
+            document.removeEventListener('mousemove', onMouseMove);
+            ball.onmouseup = null; // удаляем ненужный обработчик
+        };
+    
+        };
+    
+        // отключаем встроенное событие drag для элемента
+        ball.ondragstart = function() {
+        return false;
+        };
+    </script>
+
+    <p id="pointerEventOutput">Нажатие указателя в координатах:</p>
+    <script>
+        document.addEventListener("pointerdown", function(event) {
+        document.getElementById("pointerEventOutput").innerText = "Нажатие указателя в координатах: X = " + event.clientX + ", Y = " + event.clientY;
+        });
+    </script>
+
+    <style>
+        body {
+            height: 5000px;
+        }
+    </style>
+    <p id="scrollEventOutput">Страница прокручена на: </p>
+    <script>
+        window.addEventListener("scroll", function() {
+        document.getElementById("scrollEventOutput").innerText = "Страница прокручена на: " + window.scrollY + " пикселей";
+        });
+    </script>
+
+    <p id="touchEventOutput">Касание в точке: X = </p>
+    <script>
+        document.addEventListener("touchstart", function(event) {
+        document.getElementById("touchEventOutput").innerText = "Касание в точке: X = " + event.touches[0].clientX + ", Y = " + event.touches[0].clientY;
+        });
+    </script>
+
+    <button id="startTimer">Запустить таймер</button>
+    <script>
+        document.getElementById("startTimer").addEventListener("click", function() {
+        setTimeout(function() {
+            document.getElementById("startTimer").innerText = "Таймер сработал через 3 секунды";
+        }, 3000);
+        });
+
+    </script>
+</body>
+</html>
