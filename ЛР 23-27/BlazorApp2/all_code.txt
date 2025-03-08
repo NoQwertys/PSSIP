@@ -1,0 +1,4224 @@
+//--- File: .\Program.cs ---
+
+using BlazorApp2.Components;
+using BlazorApp2.Components.Account;
+using BlazorApp2.Data;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
+using Microsoft.EntityFrameworkCore;
+using Syncfusion.Blazor;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services to the container.
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+
+builder.Services.AddSyncfusionBlazor();
+builder.Services.AddTransient<IEmailSender, EmailSender>();
+builder.Services.Configure<SmtpSettings>(builder.Configuration.GetSection("SmtpSettings"));
+
+builder.Services.AddScoped<PropertyService>();
+builder.Services.AddScoped<OrderService>();
+
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<IdentityUserAccessor>();
+builder.Services.AddScoped<IdentityRedirectManager>();
+builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = IdentityConstants.ApplicationScheme;
+        options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
+    })
+    .AddIdentityCookies();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseMySql(connectionString, new MySqlServerVersion(new Version(9,0,1))));
+builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+builder.Services.AddIdentityCore<ApplicationUser>(options => options.SignIn.RequireConfirmedAccount = true)
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddSignInManager()
+    .AddDefaultTokenProviders();
+
+builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseMigrationsEndPoint();
+}
+else
+{
+    app.UseExceptionHandler("/Error", createScopeForErrors: true);
+    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+
+// Add additional endpoints required by the Identity /Account Razor components.
+app.MapAdditionalIdentityEndpoints();
+
+app.Run();
+
+
+//--- File: .\Components\App.razor ---
+
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="BlazorApp2.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+        <link href="_content/Syncfusion.Blazor.Themes/fluent.css" rel="stylesheet" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+
+//--- File: .\Components\Routes.razor ---
+
+﻿@using BlazorApp2.Components.Account.Shared
+<Router AppAssembly="typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
+
+
+//--- File: .\Components\_Imports.razor ---
+
+﻿@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using static Microsoft.AspNetCore.Components.Web.RenderMode
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using BlazorApp2
+@using BlazorApp2.Components
+
+
+//--- File: .\Components\Account\IdentityComponentsEndpointRouteBuilderExtensions.cs ---
+
+using BlazorApp2.Components.Account.Pages;
+using BlazorApp2.Components.Account.Pages.Manage;
+using BlazorApp2.Data;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Primitives;
+using System.Security.Claims;
+using System.Text.Json;
+
+namespace Microsoft.AspNetCore.Routing
+{
+    internal static class IdentityComponentsEndpointRouteBuilderExtensions
+    {
+        // These endpoints are required by the Identity Razor components defined in the /Components/Account/Pages directory of this project.
+        public static IEndpointConventionBuilder MapAdditionalIdentityEndpoints(this IEndpointRouteBuilder endpoints)
+        {
+            ArgumentNullException.ThrowIfNull(endpoints);
+
+            var accountGroup = endpoints.MapGroup("/Account");
+
+            accountGroup.MapPost("/PerformExternalLogin", (
+                HttpContext context,
+                [FromServices] SignInManager<ApplicationUser> signInManager,
+                [FromForm] string provider,
+                [FromForm] string returnUrl) =>
+            {
+                IEnumerable<KeyValuePair<string, StringValues>> query = [
+                    new("ReturnUrl", returnUrl),
+                    new("Action", ExternalLogin.LoginCallbackAction)];
+
+                var redirectUrl = UriHelper.BuildRelative(
+                    context.Request.PathBase,
+                    "/Account/ExternalLogin",
+                    QueryString.Create(query));
+
+                var properties = signInManager.ConfigureExternalAuthenticationProperties(provider, redirectUrl);
+                return TypedResults.Challenge(properties, [provider]);
+            });
+
+            accountGroup.MapPost("/Logout", async (
+                ClaimsPrincipal user,
+                SignInManager<ApplicationUser> signInManager,
+                [FromForm] string returnUrl) =>
+            {
+                await signInManager.SignOutAsync();
+                return TypedResults.LocalRedirect($"~/{returnUrl}");
+            });
+
+            var manageGroup = accountGroup.MapGroup("/Manage").RequireAuthorization();
+
+            manageGroup.MapPost("/LinkExternalLogin", async (
+                HttpContext context,
+                [FromServices] SignInManager<ApplicationUser> signInManager,
+                [FromForm] string provider) =>
+            {
+                // Clear the existing external cookie to ensure a clean login process
+                await context.SignOutAsync(IdentityConstants.ExternalScheme);
+
+                var redirectUrl = UriHelper.BuildRelative(
+                    context.Request.PathBase,
+                    "/Account/Manage/ExternalLogins",
+                    QueryString.Create("Action", ExternalLogins.LinkLoginCallbackAction));
+
+                var properties = signInManager.ConfigureExternalAuthenticationProperties(provider, redirectUrl, signInManager.UserManager.GetUserId(context.User));
+                return TypedResults.Challenge(properties, [provider]);
+            });
+
+            var loggerFactory = endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>();
+            var downloadLogger = loggerFactory.CreateLogger("DownloadPersonalData");
+
+            manageGroup.MapPost("/DownloadPersonalData", async (
+                HttpContext context,
+                [FromServices] UserManager<ApplicationUser> userManager,
+                [FromServices] AuthenticationStateProvider authenticationStateProvider) =>
+            {
+                var user = await userManager.GetUserAsync(context.User);
+                if (user is null)
+                {
+                    return Results.NotFound($"Unable to load user with ID '{userManager.GetUserId(context.User)}'.");
+                }
+
+                var userId = await userManager.GetUserIdAsync(user);
+                downloadLogger.LogInformation("User with ID '{UserId}' asked for their personal data.", userId);
+
+                // Only include personal data for download
+                var personalData = new Dictionary<string, string>();
+                var personalDataProps = typeof(ApplicationUser).GetProperties().Where(
+                    prop => Attribute.IsDefined(prop, typeof(PersonalDataAttribute)));
+                foreach (var p in personalDataProps)
+                {
+                    personalData.Add(p.Name, p.GetValue(user)?.ToString() ?? "null");
+                }
+
+                var logins = await userManager.GetLoginsAsync(user);
+                foreach (var l in logins)
+                {
+                    personalData.Add($"{l.LoginProvider} external login provider key", l.ProviderKey);
+                }
+
+                personalData.Add("Authenticator Key", (await userManager.GetAuthenticatorKeyAsync(user))!);
+                var fileBytes = JsonSerializer.SerializeToUtf8Bytes(personalData);
+
+                context.Response.Headers.TryAdd("Content-Disposition", "attachment; filename=PersonalData.json");
+                return TypedResults.File(fileBytes, contentType: "application/json", fileDownloadName: "PersonalData.json");
+            });
+
+            return accountGroup;
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\IdentityNoOpEmailSender.cs ---
+
+using BlazorApp2.Data;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
+
+namespace BlazorApp2.Components.Account
+{
+    // Remove the "else if (EmailSender is IdentityNoOpEmailSender)" block from RegisterConfirmation.razor after updating with a real implementation.
+    internal sealed class IdentityNoOpEmailSender : IEmailSender<ApplicationUser>
+    {
+        private readonly IEmailSender emailSender = new NoOpEmailSender();
+
+        public Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink) =>
+            emailSender.SendEmailAsync(email, "Confirm your email", $"Please confirm your account by <a href='{confirmationLink}'>clicking here</a>.");
+
+        public Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink) =>
+            emailSender.SendEmailAsync(email, "Reset your password", $"Please reset your password by <a href='{resetLink}'>clicking here</a>.");
+
+        public Task SendPasswordResetCodeAsync(ApplicationUser user, string email, string resetCode) =>
+            emailSender.SendEmailAsync(email, "Reset your password", $"Please reset your password using the following code: {resetCode}");
+    }
+}
+
+
+//--- File: .\Components\Account\IdentityRedirectManager.cs ---
+
+using Microsoft.AspNetCore.Components;
+using System.Diagnostics.CodeAnalysis;
+
+namespace BlazorApp2.Components.Account
+{
+    internal sealed class IdentityRedirectManager(NavigationManager navigationManager)
+    {
+        public const string StatusCookieName = "Identity.StatusMessage";
+
+        private static readonly CookieBuilder StatusCookieBuilder = new()
+        {
+            SameSite = SameSiteMode.Strict,
+            HttpOnly = true,
+            IsEssential = true,
+            MaxAge = TimeSpan.FromSeconds(5),
+        };
+
+        [DoesNotReturn]
+        public void RedirectTo(string? uri)
+        {
+            uri ??= "";
+
+            // Prevent open redirects.
+            if (!Uri.IsWellFormedUriString(uri, UriKind.Relative))
+            {
+                uri = navigationManager.ToBaseRelativePath(uri);
+            }
+
+            // During static rendering, NavigateTo throws a NavigationException which is handled by the framework as a redirect.
+            // So as long as this is called from a statically rendered Identity component, the InvalidOperationException is never thrown.
+            navigationManager.NavigateTo(uri);
+            throw new InvalidOperationException($"{nameof(IdentityRedirectManager)} can only be used during static rendering.");
+        }
+
+        [DoesNotReturn]
+        public void RedirectTo(string uri, Dictionary<string, object?> queryParameters)
+        {
+            var uriWithoutQuery = navigationManager.ToAbsoluteUri(uri).GetLeftPart(UriPartial.Path);
+            var newUri = navigationManager.GetUriWithQueryParameters(uriWithoutQuery, queryParameters);
+            RedirectTo(newUri);
+        }
+
+        [DoesNotReturn]
+        public void RedirectToWithStatus(string uri, string message, HttpContext context)
+        {
+            context.Response.Cookies.Append(StatusCookieName, message, StatusCookieBuilder.Build(context));
+            RedirectTo(uri);
+        }
+
+        private string CurrentPath => navigationManager.ToAbsoluteUri(navigationManager.Uri).GetLeftPart(UriPartial.Path);
+
+        [DoesNotReturn]
+        public void RedirectToCurrentPage() => RedirectTo(CurrentPath);
+
+        [DoesNotReturn]
+        public void RedirectToCurrentPageWithStatus(string message, HttpContext context)
+            => RedirectToWithStatus(CurrentPath, message, context);
+    }
+}
+
+
+//--- File: .\Components\Account\IdentityRevalidatingAuthenticationStateProvider.cs ---
+
+using BlazorApp2.Data;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Components.Server;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Options;
+using System.Security.Claims;
+
+namespace BlazorApp2.Components.Account
+{
+    // This is a server-side AuthenticationStateProvider that revalidates the security stamp for the connected user
+    // every 30 minutes an interactive circuit is connected.
+    internal sealed class IdentityRevalidatingAuthenticationStateProvider(
+            ILoggerFactory loggerFactory,
+            IServiceScopeFactory scopeFactory,
+            IOptions<IdentityOptions> options)
+        : RevalidatingServerAuthenticationStateProvider(loggerFactory)
+    {
+        protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(30);
+
+        protected override async Task<bool> ValidateAuthenticationStateAsync(
+            AuthenticationState authenticationState, CancellationToken cancellationToken)
+        {
+            // Get the user manager from a new scope to ensure it fetches fresh data
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            return await ValidateSecurityStampAsync(userManager, authenticationState.User);
+        }
+
+        private async Task<bool> ValidateSecurityStampAsync(UserManager<ApplicationUser> userManager, ClaimsPrincipal principal)
+        {
+            var user = await userManager.GetUserAsync(principal);
+            if (user is null)
+            {
+                return false;
+            }
+            else if (!userManager.SupportsUserSecurityStamp)
+            {
+                return true;
+            }
+            else
+            {
+                var principalStamp = principal.FindFirstValue(options.Value.ClaimsIdentity.SecurityStampClaimType);
+                var userStamp = await userManager.GetSecurityStampAsync(user);
+                return principalStamp == userStamp;
+            }
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\IdentityUserAccessor.cs ---
+
+using BlazorApp2.Data;
+using Microsoft.AspNetCore.Identity;
+
+namespace BlazorApp2.Components.Account
+{
+    internal sealed class IdentityUserAccessor(UserManager<ApplicationUser> userManager, IdentityRedirectManager redirectManager)
+    {
+        public async Task<ApplicationUser> GetRequiredUserAsync(HttpContext context)
+        {
+            var user = await userManager.GetUserAsync(context.User);
+
+            if (user is null)
+            {
+                redirectManager.RedirectToWithStatus("Account/InvalidUser", $"Error: Unable to load user with ID '{userManager.GetUserId(context.User)}'.", context);
+            }
+
+            return user;
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\AccessDenied.razor ---
+
+﻿@page "/Account/AccessDenied"
+
+<PageTitle>Доступ запрещен</PageTitle>
+
+<header>
+    <h1 class="text-danger">Доступ запрещен</h1>
+    <p class="text-danger">У вас нет доступа к этому ресурсу.</p>
+</header>
+
+
+//--- File: .\Components\Account\Pages\ConfirmEmail.razor ---
+
+﻿@page "/Account/ConfirmEmail"
+
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Confirm email</PageTitle>
+
+<h1>Confirm email</h1>
+<StatusMessage Message="@statusMessage" />
+
+@code {
+    private string? statusMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? UserId { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Code { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserId is null || Code is null)
+        {
+            RedirectManager.RedirectTo("");
+        }
+
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            statusMessage = $"Error loading user with ID {UserId}";
+        }
+        else
+        {
+            var code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
+            var result = await UserManager.ConfirmEmailAsync(user, code);
+            statusMessage = result.Succeeded ? "Спасибо за подтверждение электронной почты." : "Error confirming your email.";
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ConfirmEmailChange.razor ---
+
+﻿@page "/Account/ConfirmEmailChange"
+
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Confirm email change</PageTitle>
+
+<h1>Confirm email change</h1>
+
+<StatusMessage Message="@message" />
+
+@code {
+    private string? message;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? UserId { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Code { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserId is null || Email is null || Code is null)
+        {
+            RedirectManager.RedirectToWithStatus(
+                "Account/Login", "Error: Неверная ссылка для подтверждения изменения электронной почты.", HttpContext);
+        }
+
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user is null)
+        {
+            message = "Unable to find user with Id '{userId}'";
+            return;
+        }
+
+        var code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
+        var result = await UserManager.ChangeEmailAsync(user, Email, code);
+        if (!result.Succeeded)
+        {
+            message = "Error changing email.";
+            return;
+        }
+
+        // In our UI email and user name are one and the same, so when we update the email
+        // we need to update the user name.
+        var setUserNameResult = await UserManager.SetUserNameAsync(user, Email);
+        if (!setUserNameResult.Succeeded)
+        {
+            message = "Error changing user name.";
+            return;
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        message = "Благодарим вас за подтверждение изменения электронной почты.";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ExternalLogin.razor ---
+
+﻿@page "/Account/ExternalLogin"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<ExternalLogin> Logger
+
+<PageTitle>Register</PageTitle>
+
+<StatusMessage Message="@message" />
+<h1>Register</h1>
+<h2>Associate your @ProviderDisplayName account.</h2>
+<hr />
+
+<div  class="alert alert-info">
+    Вы успешно прошли аутентификацию в <strong>@ProviderDisplayName</strong>.
+    Пожалуйста, введите адрес электронной почты для этого сайта ниже и нажмите кнопку «Регистрация», чтобы завершить
+входа в систему.
+</div>
+
+<div class="row">
+    <div class="col-md-4">
+        <EditForm Model="Input" OnValidSubmit="OnValidSubmitAsync" FormName="confirmation" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" class="form-control" autocomplete="email" placeholder="Пожалуйста, введите адрес электронной почты." />
+                <label for="email" class="form-label">Email</label>
+                <ValidationMessage For="() => Input.Email" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    public const string LoginCallbackAction = "LoginCallback";
+
+    private string? message;
+    private ExternalLoginInfo externalLoginInfo = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? RemoteError { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Action { get; set; }
+
+    private string? ProviderDisplayName => externalLoginInfo.ProviderDisplayName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (RemoteError is not null)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", $"Error from external provider: {RemoteError}", HttpContext);
+        }
+
+        var info = await SignInManager.GetExternalLoginInfoAsync();
+        if (info is null)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", "Error loading external login information.", HttpContext);
+        }
+
+        externalLoginInfo = info;
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            if (Action == LoginCallbackAction)
+            {
+                await OnLoginCallbackAsync();
+                return;
+            }
+
+            // We should only reach this page via the login callback, so redirect back to
+            // the login page if we get here some other way.
+            RedirectManager.RedirectTo("Account/Login");
+        }
+    }
+
+    private async Task OnLoginCallbackAsync()
+    {
+        // Sign in the user with this external login provider if the user already has a login.
+        var result = await SignInManager.ExternalLoginSignInAsync(
+            externalLoginInfo.LoginProvider,
+            externalLoginInfo.ProviderKey,
+            isPersistent: false,
+            bypassTwoFactor: true);
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation(
+                "{Name} logged in with {LoginProvider} provider.",
+                externalLoginInfo.Principal.Identity?.Name,
+                externalLoginInfo.LoginProvider);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+
+        // If the user does not have an account, then ask the user to create an account.
+        if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
+        {
+            Input.Email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
+        }
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var emailStore = GetEmailStore();
+        var user = CreateUser();
+
+        await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
+        await emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+
+        var result = await UserManager.CreateAsync(user);
+        if (result.Succeeded)
+        {
+            result = await UserManager.AddLoginAsync(user, externalLoginInfo);
+            if (result.Succeeded)
+            {
+                Logger.LogInformation("User created an account using {Name} provider.", externalLoginInfo.LoginProvider);
+
+                var userId = await UserManager.GetUserIdAsync(user);
+                var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+                code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+
+                var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+                    NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+                    new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code });
+                await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+                // If account confirmation is required, we need to show the link if we don't have a real email sender
+                if (UserManager.Options.SignIn.RequireConfirmedAccount)
+                {
+                    RedirectManager.RedirectTo("Account/RegisterConfirmation", new() { ["email"] = Input.Email });
+                }
+
+                await SignInManager.SignInAsync(user, isPersistent: false, externalLoginInfo.LoginProvider);
+                RedirectManager.RedirectTo(ReturnUrl);
+            }
+        }
+
+        message = $"Error: {string.Join(",", result.Errors.Select(error => error.Description))}";
+    }
+
+    private ApplicationUser CreateUser()
+    {
+        try
+        {
+            return Activator.CreateInstance<ApplicationUser>();
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Can't create an instance of '{nameof(ApplicationUser)}'. " +
+                $"Ensure that '{nameof(ApplicationUser)}' is not an abstract class and has a parameterless constructor");
+        }
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException("The default UI requires a user store with email support.");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ForgotPassword.razor ---
+
+﻿@page "/Account/ForgotPassword"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Forgot your password?</PageTitle>
+
+<h1>Forgot your password?</h1>
+<h2>Enter your email.</h2>
+<hr />
+<div class="row">
+    <div class="col-md-4">
+        <EditForm Model="Input" FormName="forgot-password" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="email" class="form-label">Email</label>
+                <ValidationMessage For="() => Input.Email" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Reset password</button>
+        </EditForm>
+     </div>
+</div>
+
+@code {
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    private async Task OnValidSubmitAsync()
+    {
+        var user = await UserManager.FindByEmailAsync(Input.Email);
+        if (user is null || !(await UserManager.IsEmailConfirmedAsync(user)))
+        {
+            // Don't reveal that the user does not exist or is not confirmed
+            RedirectManager.RedirectTo("Account/ForgotPasswordConfirmation");
+        }
+
+        // For more information on how to enable account confirmation and password reset please
+        // visit https://go.microsoft.com/fwlink/?LinkID=532713
+        var code = await UserManager.GeneratePasswordResetTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ResetPassword").AbsoluteUri,
+            new Dictionary<string, object?> { ["code"] = code });
+
+        await EmailSender.SendPasswordResetLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        RedirectManager.RedirectTo("Account/ForgotPasswordConfirmation");
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ForgotPasswordConfirmation.razor ---
+
+﻿@page "/Account/ForgotPasswordConfirmation"
+
+<PageTitle>Forgot password confirmation</PageTitle>
+
+<h1>Forgot password confirmation</h1>
+<p>
+    Please check your email to reset your password.
+</p>
+
+
+//--- File: .\Components\Account\Pages\InvalidPasswordReset.razor ---
+
+﻿@page "/Account/InvalidPasswordReset"
+
+<PageTitle>Invalid password reset</PageTitle>
+
+<h1>Invalid password reset</h1>
+<p>
+    The password reset link is invalid.
+</p>
+
+
+//--- File: .\Components\Account\Pages\InvalidUser.razor ---
+
+﻿@page "/Account/InvalidUser"
+
+<PageTitle>Invalid user</PageTitle>
+
+<h3>Invalid user</h3>
+
+<StatusMessage />
+
+
+//--- File: .\Components\Account\Pages\Lockout.razor ---
+
+﻿@page "/Account/Lockout"
+
+<PageTitle>Locked out</PageTitle>
+
+<header>
+    <h1 class="text-danger">Locked out</h1>
+    <p class="text-danger">This account has been locked out, please try again later.</p>
+</header>
+
+
+//--- File: .\Components\Account\Pages\Login.razor ---
+
+﻿@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Log in</PageTitle>
+
+<h1>Log in</h1>
+<div class="row">
+    <div class="col-md-4">
+        <section>
+            <StatusMessage Message="@errorMessage" />
+            <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+                <DataAnnotationsValidator />
+                <h2>Use a local account to log in.</h2>
+                <hr />
+                <ValidationSummary class="text-danger" role="alert" />
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                    <label for="email" class="form-label">Email</label>
+                    <ValidationMessage For="() => Input.Email" class="text-danger" />
+                </div>
+                <div class="form-floating mb-3">
+                    <InputText type="password" @bind-Value="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+                    <label for="password" class="form-label">Password</label>
+                    <ValidationMessage For="() => Input.Password" class="text-danger" />
+                </div>
+                <div class="checkbox mb-3">
+                    <label class="form-label">
+                        <InputCheckbox @bind-Value="Input.RememberMe" class="darker-border-checkbox form-check-input" />
+                        Remember me
+                    </label>
+                </div>
+                <div>
+                    <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+                </div>
+                <div>
+                    <p>
+                        <a href="Account/ForgotPassword">Forgot your password?</a>
+                    </p>
+                    <p>
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Register as a new user</a>
+                    </p>
+                    <p>
+                        <a href="Account/ResendEmailConfirmation">Resend email confirmation</a>
+                    </p>
+                </div>
+            </EditForm>
+        </section>
+    </div>
+    <div class="col-md-6 col-md-offset-2">
+        <section>
+            <h3>Use another service to log in.</h3>
+            <hr />
+            <ExternalLoginPicker />
+        </section>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            // Clear the existing external cookie to ensure a clean login process
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    public async Task LoginUser()
+    {
+        // This doesn't count login failures towards account lockout
+        // To enable password failures to trigger account lockout, set lockoutOnFailure: true
+        var result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("User logged in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo(
+                "Account/LoginWith2fa",
+                new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = Input.RememberMe });
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User account locked out.");
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            errorMessage = "Error: Неверная попытка входа в систему.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [Display(Name = "Remember me?")]
+        public bool RememberMe { get; set; }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\LoginWith2fa.razor ---
+
+﻿@page "/Account/LoginWith2fa"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<LoginWith2fa> Logger
+
+<PageTitle>Two-factor authentication</PageTitle>
+
+<h1>Two-factor authentication</h1>
+<hr />
+<StatusMessage Message="@message" />
+<p>Your login is protected with an authenticator app. Enter your authenticator code below.</p>
+<div class="row">
+    <div class="col-md-4">
+        <EditForm Model="Input" FormName="login-with-2fa" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="RememberMe" value="@RememberMe" />
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.TwoFactorCode" class="form-control" autocomplete="off" />
+                <label for="two-factor-code" class="form-label">Authenticator code</label>
+                <ValidationMessage For="() => Input.TwoFactorCode" class="text-danger" />
+            </div>
+            <div class="checkbox mb-3">
+                <label for="remember-machine" class="form-label">
+                    <InputCheckbox @bind-Value="Input.RememberMachine" />
+                    Remember this machine
+                </label>
+            </div>
+            <div>
+                <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+            </div>
+        </EditForm>
+    </div>
+</div>
+<p>
+    Don't have access to your authenticator device? You can
+    <a href="Account/LoginWithRecoveryCode?ReturnUrl=@ReturnUrl">log in with a recovery code</a>.
+</p>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private bool RememberMe { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure the user has gone through the username & password screen first
+        user = await SignInManager.GetTwoFactorAuthenticationUserAsync() ??
+            throw new InvalidOperationException("Unable to load two-factor authentication user.");
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var authenticatorCode = Input.TwoFactorCode!.Replace(" ", string.Empty).Replace("-", string.Empty);
+        var result = await SignInManager.TwoFactorAuthenticatorSignInAsync(authenticatorCode, RememberMe, Input.RememberMachine);
+        var userId = await UserManager.GetUserIdAsync(user);
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("User with ID '{UserId}' logged in with 2fa.", userId);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User with ID '{UserId}' account locked out.", userId);
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            Logger.LogWarning("Invalid authenticator code entered for user with ID '{UserId}'.", userId);
+            message = "Error: Invalid authenticator code.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(7, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Text)]
+        [Display(Name = "Authenticator code")]
+        public string? TwoFactorCode { get; set; }
+
+        [Display(Name = "Remember this machine")]
+        public bool RememberMachine { get; set; }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\LoginWithRecoveryCode.razor ---
+
+﻿@page "/Account/LoginWithRecoveryCode"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<LoginWithRecoveryCode> Logger
+
+<PageTitle>Recovery code verification</PageTitle>
+
+<h1>Recovery code verification</h1>
+<hr />
+<StatusMessage Message="@message" />
+<p>
+    You have requested to log in with a recovery code. This login will not be remembered until you provide
+    an authenticator app code at log in or disable 2FA and log in again.
+</p>
+<div class="row">
+    <div class="col-md-4">
+        <EditForm Model="Input" FormName="login-with-recovery-code" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.RecoveryCode" class="form-control" autocomplete="off" placeholder="RecoveryCode" />
+                <label for="recovery-code" class="form-label">Recovery Code</label>
+                <ValidationMessage For="() => Input.RecoveryCode" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Log in</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Ensure the user has gone through the username & password screen first
+        user = await SignInManager.GetTwoFactorAuthenticationUserAsync() ??
+            throw new InvalidOperationException("Unable to load two-factor authentication user.");
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var recoveryCode = Input.RecoveryCode.Replace(" ", string.Empty);
+
+        var result = await SignInManager.TwoFactorRecoveryCodeSignInAsync(recoveryCode);
+
+        var userId = await UserManager.GetUserIdAsync(user);
+
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("User with ID '{UserId}' logged in with a recovery code.", userId);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User account locked out.");
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else
+        {
+            Logger.LogWarning("Invalid recovery code entered for user with ID '{UserId}' ", userId);
+            message = "Error: Invalid recovery code entered.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [DataType(DataType.Text)]
+        [Display(Name = "Recovery Code")]
+        public string RecoveryCode { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Register.razor ---
+
+﻿@page "/Account/Register"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Identity.UI.Services
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IUserStore<ApplicationUser> UserStore
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject ILogger<Register> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+@inject IEmailSender CustomEmailSender
+
+<PageTitle>Register</PageTitle>
+
+<h1>Register</h1>
+
+<div class="row">
+    <div class="col-md-4">
+        <StatusMessage Message="@Message" />
+        <EditForm Model="Input" asp-route-returnUrl="@ReturnUrl" method="post" OnValidSubmit="RegisterUser" FormName="register">
+            <DataAnnotationsValidator />
+            <h2>Create a new account.</h2>
+            <hr />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="email">Email</label>
+                <ValidationMessage For="() => Input.Email" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                <label for="password">Password</label>
+                <ValidationMessage For="() => Input.Password" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="password" />
+                <label for="confirm-password">Confirm Password</label>
+                <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Register</button>
+        </EditForm>
+    </div>
+    <div class="col-md-6 col-md-offset-2">
+        <section>
+            <h3>Use another service to register.</h3>
+            <hr />
+            <ExternalLoginPicker />
+        </section>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<IdentityError>? identityErrors;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
+
+    public async Task RegisterUser(EditContext editContext)
+    {
+        var user = CreateUser();
+
+        await UserStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
+        var emailStore = GetEmailStore();
+        await emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+        var result = await UserManager.CreateAsync(user, Input.Password);
+
+        if (!result.Succeeded)
+        {
+            identityErrors = result.Errors;
+            return;
+        }
+
+        Logger.LogInformation("Пользователь создал новую учетную запись с паролем.");
+
+        // Добавляем отправку приветственного письма
+        try
+        {
+            var subject = "Добро пожаловать!";
+            var message = $"Уважаемый {Input.Email}, спасибо за регистрацию!";
+            await CustomEmailSender.SendEmailAsync(Input.Email, subject, message);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Ошибка отправки приветственного письма");
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+            new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code, ["returnUrl"] = ReturnUrl });
+
+        await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        if (UserManager.Options.SignIn.RequireConfirmedAccount)
+        {
+            RedirectManager.RedirectTo(
+                "Account/RegisterConfirmation",
+                new() { ["email"] = Input.Email, ["returnUrl"] = ReturnUrl });
+        }
+
+        await SignInManager.SignInAsync(user, isPersistent: false);
+        RedirectManager.RedirectTo(ReturnUrl);
+    }
+
+    private ApplicationUser CreateUser()
+    {
+        try
+        {
+            return Activator.CreateInstance<ApplicationUser>();
+        }
+        catch
+        {
+            throw new InvalidOperationException($"Can't create an instance of '{nameof(ApplicationUser)}'. " +
+                $"Ensure that '{nameof(ApplicationUser)}' is not an abstract class and has a parameterless constructor.");
+        }
+    }
+
+    private IUserEmailStore<ApplicationUser> GetEmailStore()
+    {
+        if (!UserManager.SupportsUserEmail)
+        {
+            throw new NotSupportedException("The default UI requires a user store with email support.");
+        }
+        return (IUserEmailStore<ApplicationUser>)UserStore;
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        [Display(Name = "Email")]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [StringLength(100, ErrorMessage = "Длина {0} должна быть не менее {2} и не более {1} символов.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "Password")]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare("Password", ErrorMessage = "Пароль и пароль подтверждения не совпадают.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\RegisterConfirmation.razor ---
+
+﻿@page "/Account/RegisterConfirmation"
+
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Register confirmation</PageTitle>
+
+<h1>Register confirmation</h1>
+
+<StatusMessage Message="@statusMessage" />
+
+@if (emailConfirmationLink is not null)
+{
+    <p>
+        This app does not currently have a real email sender registered, see <a href="https://aka.ms/aspaccountconf">these docs</a> for how to configure a real email sender.
+        Normally this would be emailed: <a href="@emailConfirmationLink">Click here to confirm your account</a>
+    </p>
+}
+else
+{
+    <p>Please check your email to confirm your account.</p>
+}
+
+@code {
+    private string? emailConfirmationLink;
+    private string? statusMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? Email { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Email is null)
+        {
+            RedirectManager.RedirectTo("");
+        }
+
+        var user = await UserManager.FindByEmailAsync(Email);
+        if (user is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            statusMessage = "Error finding user for unspecified email";
+        }
+        else if (EmailSender is IdentityNoOpEmailSender)
+        {
+            // Once you add a real email sender, you should remove this code that lets you confirm the account
+            var userId = await UserManager.GetUserIdAsync(user);
+            var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+            code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+            emailConfirmationLink = NavigationManager.GetUriWithQueryParameters(
+                NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+                new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code, ["returnUrl"] = ReturnUrl });
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ResendEmailConfirmation.razor ---
+
+﻿@page "/Account/ResendEmailConfirmation"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Resend email confirmation</PageTitle>
+
+<h1>Resend email confirmation</h1>
+<h2>Enter your email.</h2>
+<hr />
+<StatusMessage Message="@message" />
+<div class="row">
+    <div class="col-md-4">
+        <EditForm Model="Input" FormName="resend-email-confirmation" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" class="form-control" aria-required="true" placeholder="name@example.com" />
+                <label for="email" class="form-label">Email</label>
+                <ValidationMessage For="() => Input.Email" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Resend</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? message;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    private async Task OnValidSubmitAsync()
+    {
+        var user = await UserManager.FindByEmailAsync(Input.Email!);
+        if (user is null)
+        {
+            message = "Verification email sent. Please check your email.";
+            return;
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+            new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code });
+        await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        message = "Verification email sent. Please check your email.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ResetPassword.razor ---
+
+﻿@page "/Account/ResetPassword"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject IdentityRedirectManager RedirectManager
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Reset password</PageTitle>
+
+<h1>Reset password</h1>
+<h2>Reset your password.</h2>
+<hr />
+<div class="row">
+    <div class="col-md-4">
+        <StatusMessage Message="@Message" />
+        <EditForm Model="Input" FormName="reset-password" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+
+            <input type="hidden" name="Input.Code" value="@Input.Code" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="email" class="form-label">Email</label>
+                <ValidationMessage For="() => Input.Email" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Please enter your password." />
+                <label for="password" class="form-label">Password</label>
+                <ValidationMessage For="() => Input.Password" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Please confirm your password." />
+                <label for="confirm-password" class="form-label">Confirm password</label>
+                <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Reset</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private IEnumerable<IdentityError>? identityErrors;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? Code { get; set; }
+
+    private string? Message => identityErrors is null ? null : $"Error: {string.Join(", ", identityErrors.Select(error => error.Description))}";
+
+    protected override void OnInitialized()
+    {
+        if (Code is null)
+        {
+            RedirectManager.RedirectTo("Account/InvalidPasswordReset");
+        }
+
+        Input.Code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var user = await UserManager.FindByEmailAsync(Input.Email);
+        if (user is null)
+        {
+            // Don't reveal that the user does not exist
+            RedirectManager.RedirectTo("Account/ResetPasswordConfirmation");
+        }
+
+        var result = await UserManager.ResetPasswordAsync(user, Input.Code, Input.Password);
+        if (result.Succeeded)
+        {
+            RedirectManager.RedirectTo("Account/ResetPasswordConfirmation");
+        }
+
+        identityErrors = result.Errors;
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm password")]
+        [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+
+        [Required]
+        public string Code { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\ResetPasswordConfirmation.razor ---
+
+﻿@page "/Account/ResetPasswordConfirmation"
+<PageTitle>Reset password confirmation</PageTitle>
+
+<h1>Reset password confirmation</h1>
+<p>
+    Your password has been reset. Please <a href="Account/Login">click here to log in</a>.
+</p>
+
+
+//--- File: .\Components\Account\Pages\_Imports.razor ---
+
+﻿@using BlazorApp2.Components.Account.Shared
+@layout AccountLayout
+
+
+//--- File: .\Components\Account\Pages\Manage\ChangePassword.razor ---
+
+﻿@page "/Account/Manage/ChangePassword"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<ChangePassword> Logger
+
+<PageTitle>Change password</PageTitle>
+
+<h3>Change password</h3>
+<StatusMessage Message="@message" />
+<div class="row">
+    <div class="col-md-6">
+        <EditForm Model="Input" FormName="change-password" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.OldPassword" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Please enter your old password." />
+                <label for="old-password" class="form-label">Old password</label>
+                <ValidationMessage For="() => Input.OldPassword" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.NewPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Please enter your new password." />
+                <label for="new-password" class="form-label">New password</label>
+                <ValidationMessage For="() => Input.NewPassword" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" class="form-control" autocomplete="new-password" aria-required="true" placeholder="Please confirm your new password." />
+                <label for="confirm-password" class="form-label">Confirm password</label>
+                <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Update password</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+    private bool hasPassword;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        hasPassword = await UserManager.HasPasswordAsync(user);
+        if (!hasPassword)
+        {
+            RedirectManager.RedirectTo("Account/Manage/SetPassword");
+        }
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var changePasswordResult = await UserManager.ChangePasswordAsync(user, Input.OldPassword, Input.NewPassword);
+        if (!changePasswordResult.Succeeded)
+        {
+            message = $"Error: {string.Join(",", changePasswordResult.Errors.Select(error => error.Description))}";
+            return;
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        Logger.LogInformation("User changed their password successfully.");
+
+        RedirectManager.RedirectToCurrentPageWithStatus("Your password has been changed", HttpContext);
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [DataType(DataType.Password)]
+        [Display(Name = "Current password")]
+        public string OldPassword { get; set; } = "";
+
+        [Required]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "New password")]
+        public string NewPassword { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm new password")]
+        [Compare("NewPassword", ErrorMessage = "The new password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\DeletePersonalData.razor ---
+
+﻿@page "/Account/Manage/DeletePersonalData"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<DeletePersonalData> Logger
+
+<PageTitle>Delete Personal Data</PageTitle>
+
+<StatusMessage Message="@message" />
+
+<h3>Delete Personal Data</h3>
+
+<div class="alert alert-warning" role="alert">
+    <p>
+        <strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
+    </p>
+</div>
+
+<div>
+    <EditForm Model="Input" FormName="delete-user" OnValidSubmit="OnValidSubmitAsync" method="post">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" role="alert" />
+        @if (requirePassword)
+        {
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Please enter your password." />
+                <label for="password" class="form-label">Password</label>
+                <ValidationMessage For="() => Input.Password" class="text-danger" />
+            </div>
+        }
+        <button class="w-100 btn btn-lg btn-danger" type="submit">Delete data and close my account</button>
+    </EditForm>
+</div>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+    private bool requirePassword;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        requirePassword = await UserManager.HasPasswordAsync(user);
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (requirePassword && !await UserManager.CheckPasswordAsync(user, Input.Password))
+        {
+            message = "Error: Incorrect password.";
+            return;
+        }
+
+        var result = await UserManager.DeleteAsync(user);
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException("Unexpected error occurred deleting user.");
+        }
+
+        await SignInManager.SignOutAsync();
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        Logger.LogInformation("User with ID '{UserId}' deleted themselves.", userId);
+
+        RedirectManager.RedirectToCurrentPage();
+    }
+
+    private sealed class InputModel
+    {
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\Disable2fa.razor ---
+
+﻿@page "/Account/Manage/Disable2fa"
+
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<Disable2fa> Logger
+
+<PageTitle>Disable two-factor authentication (2FA)</PageTitle>
+
+<StatusMessage />
+<h3>Disable two-factor authentication (2FA)</h3>
+
+<div class="alert alert-warning" role="alert">
+    <p>
+        <strong>This action only disables 2FA.</strong>
+    </p>
+    <p>
+        Disabling 2FA does not change the keys used in authenticator apps. If you wish to change the key
+        used in an authenticator app you should <a href="Account/Manage/ResetAuthenticator">reset your authenticator keys.</a>
+    </p>
+</div>
+
+<div>
+    <form @formname="disable-2fa" @onsubmit="OnSubmitAsync" method="post">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Disable 2FA</button>
+    </form>
+</div>
+
+@code {
+    private ApplicationUser user = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method) && !await UserManager.GetTwoFactorEnabledAsync(user))
+        {
+            throw new InvalidOperationException("Cannot disable 2FA for user as it's not currently enabled.");
+        }
+    }
+
+    private async Task OnSubmitAsync()
+    {
+        var disable2faResult = await UserManager.SetTwoFactorEnabledAsync(user, false);
+        if (!disable2faResult.Succeeded)
+        {
+            throw new InvalidOperationException("Unexpected error occurred disabling 2FA.");
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        Logger.LogInformation("User with ID '{UserId}' has disabled 2fa.", userId);
+        RedirectManager.RedirectToWithStatus(
+            "Account/Manage/TwoFactorAuthentication",
+            "2fa has been disabled. You can reenable 2fa when you setup an authenticator app",
+            HttpContext);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\Email.razor ---
+
+﻿@page "/Account/Manage/Email"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject IdentityUserAccessor UserAccessor
+@inject NavigationManager NavigationManager
+
+<PageTitle>Manage email</PageTitle>
+
+<h3>Manage email</h3>
+
+<StatusMessage Message="@message"/>
+<div class="row">
+    <div class="col-md-6">
+        <form @onsubmit="OnSendEmailVerificationAsync" @formname="send-verification" id="send-verification-form" method="post">
+            <AntiforgeryToken />
+        </form>
+        <EditForm Model="Input" FormName="change-email" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            @if (isEmailConfirmed)
+            {
+                <div class="form-floating mb-3 input-group">
+                    <input type="text" value="@email" class="form-control" placeholder="Please enter your email." disabled />
+                    <div class="input-group-append">
+                        <span class="h-100 input-group-text text-success font-weight-bold">✓</span>
+                    </div>
+                    <label for="email" class="form-label">Email</label>
+                </div>
+            }
+            else
+            {
+                <div class="form-floating mb-3">
+                    <input type="text" value="@email" class="form-control" placeholder="Please enter your email." disabled />
+                    <label for="email" class="form-label">Email</label>
+                    <button type="submit" class="btn btn-link" form="send-verification-form">Send verification email</button>
+                </div>
+            }
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.NewEmail" class="form-control" autocomplete="email" aria-required="true" placeholder="Please enter new email." />
+                <label for="new-email" class="form-label">New email</label>
+                <ValidationMessage For="() => Input.NewEmail" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Change email</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+    private string? email;
+    private bool isEmailConfirmed;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "change-email")]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        email = await UserManager.GetEmailAsync(user);
+        isEmailConfirmed = await UserManager.IsEmailConfirmedAsync(user);
+
+        Input.NewEmail ??= email;
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (Input.NewEmail is null || Input.NewEmail == email)
+        {
+            message = "Your email is unchanged.";
+            return;
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateChangeEmailTokenAsync(user, Input.NewEmail);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ConfirmEmailChange").AbsoluteUri,
+            new Dictionary<string, object?> { ["userId"] = userId, ["email"] = Input.NewEmail, ["code"] = code });
+
+        await EmailSender.SendConfirmationLinkAsync(user, Input.NewEmail, HtmlEncoder.Default.Encode(callbackUrl));
+
+        message = "Confirmation link to change email sent. Please check your email.";
+    }
+
+    private async Task OnSendEmailVerificationAsync()
+    {
+        if (email is null)
+        {
+            return;
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+            new Dictionary<string, object?> { ["userId"] = userId, ["code"] = code });
+
+        await EmailSender.SendConfirmationLinkAsync(user, email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        message = "Verification email sent. Please check your email.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        [Display(Name = "New email")]
+        public string? NewEmail { get; set; }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\EnableAuthenticator.razor ---
+
+﻿@page "/Account/Manage/EnableAuthenticator"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityUserAccessor UserAccessor
+@inject UrlEncoder UrlEncoder
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<EnableAuthenticator> Logger
+
+<PageTitle>Configure authenticator app</PageTitle>
+
+@if (recoveryCodes is not null)
+{
+    <ShowRecoveryCodes RecoveryCodes="recoveryCodes.ToArray()" StatusMessage="@message" />
+}
+else
+{
+    <StatusMessage Message="@message" />
+    <h3>Configure authenticator app</h3>
+    <div>
+        <p>To use an authenticator app go through the following steps:</p>
+        <ol class="list">
+            <li>
+                <p>
+                    Download a two-factor authenticator app like Microsoft Authenticator for
+                    <a href="https://go.microsoft.com/fwlink/?Linkid=825072">Android</a> and
+                    <a href="https://go.microsoft.com/fwlink/?Linkid=825073">iOS</a> or
+                    Google Authenticator for
+                    <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2&amp;hl=en">Android</a> and
+                    <a href="https://itunes.apple.com/us/app/google-authenticator/id388497605?mt=8">iOS</a>.
+                </p>
+            </li>
+            <li>
+                <p>Scan the QR Code or enter this key <kbd>@sharedKey</kbd> into your two factor authenticator app. Spaces and casing do not matter.</p>
+                <div class="alert alert-info">Learn how to <a href="https://go.microsoft.com/fwlink/?Linkid=852423">enable QR code generation</a>.</div>
+                <div></div>
+                <div data-url="@authenticatorUri"></div>
+            </li>
+            <li>
+                <p>
+                    Once you have scanned the QR code or input the key above, your two factor authentication app will provide you
+                    with a unique code. Enter the code in the confirmation box below.
+                </p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <EditForm Model="Input" FormName="send-code" OnValidSubmit="OnValidSubmitAsync" method="post">
+                            <DataAnnotationsValidator />
+                            <div class="form-floating mb-3">
+                                <InputText @bind-Value="Input.Code" class="form-control" autocomplete="off" placeholder="Please enter the code." />
+                                <label for="code" class="control-label form-label">Verification Code</label>
+                                <ValidationMessage For="() => Input.Code" class="text-danger" />
+                            </div>
+                            <button type="submit" class="w-100 btn btn-lg btn-primary">Verify</button>
+                            <ValidationSummary class="text-danger" role="alert" />
+                        </EditForm>
+                    </div>
+                </div>
+            </li>
+        </ol>
+    </div>
+}
+
+@code {
+    private const string AuthenticatorUriFormat = "otpauth://totp/{0}:{1}?secret={2}&issuer={0}&digits=6";
+
+    private string? message;
+    private ApplicationUser user = default!;
+    private string? sharedKey;
+    private string? authenticatorUri;
+    private IEnumerable<string>? recoveryCodes;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+
+        await LoadSharedKeyAndQrCodeUriAsync(user);
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        // Strip spaces and hyphens
+        var verificationCode = Input.Code.Replace(" ", string.Empty).Replace("-", string.Empty);
+
+        var is2faTokenValid = await UserManager.VerifyTwoFactorTokenAsync(
+            user, UserManager.Options.Tokens.AuthenticatorTokenProvider, verificationCode);
+
+        if (!is2faTokenValid)
+        {
+            message = "Error: Verification code is invalid.";
+            return;
+        }
+
+        await UserManager.SetTwoFactorEnabledAsync(user, true);
+        var userId = await UserManager.GetUserIdAsync(user);
+        Logger.LogInformation("User with ID '{UserId}' has enabled 2FA with an authenticator app.", userId);
+
+        message = "Your authenticator app has been verified.";
+
+        if (await UserManager.CountRecoveryCodesAsync(user) == 0)
+        {
+            recoveryCodes = await UserManager.GenerateNewTwoFactorRecoveryCodesAsync(user, 10);
+        }
+        else
+        {
+            RedirectManager.RedirectToWithStatus("Account/Manage/TwoFactorAuthentication", message, HttpContext);
+        }
+    }
+
+    private async ValueTask LoadSharedKeyAndQrCodeUriAsync(ApplicationUser user)
+    {
+        // Load the authenticator key & QR code URI to display on the form
+        var unformattedKey = await UserManager.GetAuthenticatorKeyAsync(user);
+        if (string.IsNullOrEmpty(unformattedKey))
+        {
+            await UserManager.ResetAuthenticatorKeyAsync(user);
+            unformattedKey = await UserManager.GetAuthenticatorKeyAsync(user);
+        }
+
+        sharedKey = FormatKey(unformattedKey!);
+
+        var email = await UserManager.GetEmailAsync(user);
+        authenticatorUri = GenerateQrCodeUri(email!, unformattedKey!);
+    }
+
+    private string FormatKey(string unformattedKey)
+    {
+        var result = new StringBuilder();
+        int currentPosition = 0;
+        while (currentPosition + 4 < unformattedKey.Length)
+        {
+            result.Append(unformattedKey.AsSpan(currentPosition, 4)).Append(' ');
+            currentPosition += 4;
+        }
+        if (currentPosition < unformattedKey.Length)
+        {
+            result.Append(unformattedKey.AsSpan(currentPosition));
+        }
+
+        return result.ToString().ToLowerInvariant();
+    }
+
+    private string GenerateQrCodeUri(string email, string unformattedKey)
+    {
+        return string.Format(
+            CultureInfo.InvariantCulture,
+            AuthenticatorUriFormat,
+            UrlEncoder.Encode("Microsoft.AspNetCore.Identity.UI"),
+            UrlEncoder.Encode(email),
+            unformattedKey);
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(7, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Text)]
+        [Display(Name = "Verification Code")]
+        public string Code { get; set; } = "";
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\ExternalLogins.razor ---
+
+﻿@page "/Account/Manage/ExternalLogins"
+
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IUserStore<ApplicationUser> UserStore
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Manage your external logins</PageTitle>
+
+<StatusMessage />
+@if (currentLogins?.Count > 0)
+{
+    <h3>Registered Logins</h3>
+    <table class="table">
+        <tbody>
+            @foreach (var login in currentLogins)
+            {
+                <tr>
+                    <td>@login.ProviderDisplayName</td>
+                    <td>
+                        @if (showRemoveButton)
+                        {
+                            <form @formname="@($"remove-login-{login.LoginProvider}")" @onsubmit="OnSubmitAsync" method="post">
+                                <AntiforgeryToken />
+                                <div>
+                                    <input type="hidden" name="@nameof(LoginProvider)" value="@login.LoginProvider" />
+                                    <input type="hidden" name="@nameof(ProviderKey)" value="@login.ProviderKey" />
+                                    <button type="submit" class="btn btn-primary" title="Remove this @login.ProviderDisplayName login from your account">Remove</button>
+                                </div>
+                            </form>
+                        }
+                        else
+                        {
+                            @: &nbsp;
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+@if (otherLogins?.Count > 0)
+{
+    <h4>Add another service to log in.</h4>
+    <hr />
+    <form class="form-horizontal" action="Account/Manage/LinkExternalLogin" method="post">
+        <AntiforgeryToken />
+        <div>
+            <p>
+                @foreach (var provider in otherLogins)
+                {
+                    <button type="submit" class="btn btn-primary" name="Provider" value="@provider.Name" title="Log in using your @provider.DisplayName account">
+                        @provider.DisplayName
+                    </button>
+                }
+            </p>
+        </div>
+    </form>
+}
+
+@code {
+    public const string LinkLoginCallbackAction = "LinkLoginCallback";
+
+    private ApplicationUser user = default!;
+    private IList<UserLoginInfo>? currentLogins;
+    private IList<AuthenticationScheme>? otherLogins;
+    private bool showRemoveButton;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private string? LoginProvider { get; set; }
+
+    [SupplyParameterFromForm]
+    private string? ProviderKey { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Action { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        currentLogins = await UserManager.GetLoginsAsync(user);
+        otherLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync())
+            .Where(auth => currentLogins.All(ul => auth.Name != ul.LoginProvider))
+            .ToList();
+
+        string? passwordHash = null;
+        if (UserStore is IUserPasswordStore<ApplicationUser> userPasswordStore)
+        {
+            passwordHash = await userPasswordStore.GetPasswordHashAsync(user, HttpContext.RequestAborted);
+        }
+
+        showRemoveButton = passwordHash is not null || currentLogins.Count > 1;
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method) && Action == LinkLoginCallbackAction)
+        {
+            await OnGetLinkLoginCallbackAsync();
+        }
+    }
+
+    private async Task OnSubmitAsync()
+    {
+        var result = await UserManager.RemoveLoginAsync(user, LoginProvider!, ProviderKey!);
+        if (!result.Succeeded)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: The external login was not removed.", HttpContext);
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        RedirectManager.RedirectToCurrentPageWithStatus("The external login was removed.", HttpContext);
+    }
+
+    private async Task OnGetLinkLoginCallbackAsync()
+    {
+        var userId = await UserManager.GetUserIdAsync(user);
+        var info = await SignInManager.GetExternalLoginInfoAsync(userId);
+        if (info is null)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: Could not load external login info.", HttpContext);
+        }
+
+        var result = await UserManager.AddLoginAsync(user, info);
+        if (!result.Succeeded)
+        {
+            RedirectManager.RedirectToCurrentPageWithStatus("Error: The external login was not added. External logins can only be associated with one account.", HttpContext);
+        }
+
+        // Clear the existing external cookie to ensure a clean login process
+        await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+
+        RedirectManager.RedirectToCurrentPageWithStatus("The external login was added.", HttpContext);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\GenerateRecoveryCodes.razor ---
+
+﻿@page "/Account/Manage/GenerateRecoveryCodes"
+
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<GenerateRecoveryCodes> Logger
+
+<PageTitle>Generate two-factor authentication (2FA) recovery codes</PageTitle>
+
+@if (recoveryCodes is not null)
+{
+    <ShowRecoveryCodes RecoveryCodes="recoveryCodes.ToArray()" StatusMessage="@message" />
+}
+else
+{
+    <h3>Generate two-factor authentication (2FA) recovery codes</h3>
+    <div class="alert alert-warning" role="alert">
+        <p>
+            <span class="glyphicon glyphicon-warning-sign"></span>
+            <strong>Put these codes in a safe place.</strong>
+        </p>
+        <p>
+            If you lose your device and don't have the recovery codes you will lose access to your account.
+        </p>
+        <p>
+            Generating new recovery codes does not change the keys used in authenticator apps. If you wish to change the key
+            used in an authenticator app you should <a href="Account/Manage/ResetAuthenticator">reset your authenticator keys.</a>
+        </p>
+    </div>
+    <div>
+        <form @formname="generate-recovery-codes" @onsubmit="OnSubmitAsync" method="post">
+            <AntiforgeryToken />
+            <button class="btn btn-danger" type="submit">Generate Recovery Codes</button>
+        </form>
+    </div>
+}
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+    private IEnumerable<string>? recoveryCodes;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+
+        var isTwoFactorEnabled = await UserManager.GetTwoFactorEnabledAsync(user);
+        if (!isTwoFactorEnabled)
+        {
+            throw new InvalidOperationException("Cannot generate recovery codes for user because they do not have 2FA enabled.");
+        }
+    }
+
+    private async Task OnSubmitAsync()
+    {
+        var userId = await UserManager.GetUserIdAsync(user);
+        recoveryCodes = await UserManager.GenerateNewTwoFactorRecoveryCodesAsync(user, 10);
+        message = "You have generated new recovery codes.";
+
+        Logger.LogInformation("User with ID '{UserId}' has generated new 2FA recovery codes.", userId);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\Index.razor ---
+
+﻿@page "/Account/Manage"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Profile</PageTitle>
+
+<h3>Profile</h3>
+<StatusMessage />
+
+<div class="row">
+    <div class="col-md-6">
+        <EditForm Model="Input" FormName="profile" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <input type="text" value="@username" class="form-control" placeholder="Please choose your username." disabled />
+                <label for="username" class="form-label">Username</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.PhoneNumber" class="form-control" placeholder="Please enter your phone number." />
+                <label for="phone-number" class="form-label">Phone number</label>
+                <ValidationMessage For="() => Input.PhoneNumber" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Save</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private ApplicationUser user = default!;
+    private string? username;
+    private string? phoneNumber;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        username = await UserManager.GetUserNameAsync(user);
+        phoneNumber = await UserManager.GetPhoneNumberAsync(user);
+
+        Input.PhoneNumber ??= phoneNumber;
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        if (Input.PhoneNumber != phoneNumber)
+        {
+            var setPhoneResult = await UserManager.SetPhoneNumberAsync(user, Input.PhoneNumber);
+            if (!setPhoneResult.Succeeded)
+            {
+                RedirectManager.RedirectToCurrentPageWithStatus("Error: Failed to set phone number.", HttpContext);
+            }
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        RedirectManager.RedirectToCurrentPageWithStatus("Your profile has been updated", HttpContext);
+    }
+
+    private sealed class InputModel
+    {
+        [Phone]
+        [Display(Name = "Phone number")]
+        public string? PhoneNumber { get; set; }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\PersonalData.razor ---
+
+﻿@page "/Account/Manage/PersonalData"
+
+@inject IdentityUserAccessor UserAccessor
+
+<PageTitle>Personal Data</PageTitle>
+
+<StatusMessage />
+<h3>Personal Data</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <p>Your account contains personal data that you have given us. This page allows you to download or delete that data.</p>
+        <p>
+            <strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
+        </p>
+        <form action="Account/Manage/DownloadPersonalData" method="post">
+            <AntiforgeryToken />
+            <button class="btn btn-primary" type="submit">Download</button>
+        </form>
+        <p>
+            <a href="Account/Manage/DeletePersonalData" class="btn btn-danger">Delete</a>
+        </p>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _ = await UserAccessor.GetRequiredUserAsync(HttpContext);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\ResetAuthenticator.razor ---
+
+﻿@page "/Account/Manage/ResetAuthenticator"
+
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<ResetAuthenticator> Logger
+
+<PageTitle>Reset authenticator key</PageTitle>
+
+<StatusMessage />
+<h3>Reset authenticator key</h3>
+<div class="alert alert-warning" role="alert">
+    <p>
+        <span class="glyphicon glyphicon-warning-sign"></span>
+        <strong>If you reset your authenticator key your authenticator app will not work until you reconfigure it.</strong>
+    </p>
+    <p>
+        This process disables 2FA until you verify your authenticator app.
+        If you do not complete your authenticator app configuration you may lose access to your account.
+    </p>
+</div>
+<div>
+    <form @formname="reset-authenticator" @onsubmit="OnSubmitAsync" method="post">
+        <AntiforgeryToken />
+        <button class="btn btn-danger" type="submit">Reset authenticator key</button>
+    </form>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private async Task OnSubmitAsync()
+    {
+        var user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        await UserManager.SetTwoFactorEnabledAsync(user, false);
+        await UserManager.ResetAuthenticatorKeyAsync(user);
+        var userId = await UserManager.GetUserIdAsync(user);
+        Logger.LogInformation("User with ID '{UserId}' has reset their authentication app key.", userId);
+
+        await SignInManager.RefreshSignInAsync(user);
+
+        RedirectManager.RedirectToWithStatus(
+            "Account/Manage/EnableAuthenticator",
+            "Your authenticator app key has been reset, you will need to configure your authenticator app using the new key.",
+            HttpContext);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\SetPassword.razor ---
+
+﻿@page "/Account/Manage/SetPassword"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Set password</PageTitle>
+
+<h3>Set your password</h3>
+<StatusMessage Message="@message" />
+<p class="text-info">
+    You do not have a local username/password for this site. Add a local
+    account so you can log in without an external login.
+</p>
+<div class="row">
+    <div class="col-md-6">
+        <EditForm Model="Input" FormName="set-password" OnValidSubmit="OnValidSubmitAsync" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.NewPassword" class="form-control" autocomplete="new-password" placeholder="Please enter your new password." />
+                <label for="new-password" class="form-label">New password</label>
+                <ValidationMessage For="() => Input.NewPassword" class="text-danger" />
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" class="form-control" autocomplete="new-password" placeholder="Please confirm your new password." />
+                <label for="confirm-password" class="form-label">Confirm password</label>
+                <ValidationMessage For="() => Input.ConfirmPassword" class="text-danger" />
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Set password</button>
+        </EditForm>
+     </div>
+</div>
+
+@code {
+    private string? message;
+    private ApplicationUser user = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+
+        var hasPassword = await UserManager.HasPasswordAsync(user);
+        if (hasPassword)
+        {
+            RedirectManager.RedirectTo("Account/Manage/ChangePassword");
+        }
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var addPasswordResult = await UserManager.AddPasswordAsync(user, Input.NewPassword!);
+        if (!addPasswordResult.Succeeded)
+        {
+            message = $"Error: {string.Join(",", addPasswordResult.Errors.Select(error => error.Description))}";
+            return;
+        }
+
+        await SignInManager.RefreshSignInAsync(user);
+        RedirectManager.RedirectToCurrentPageWithStatus("Your password has been set.", HttpContext);
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [StringLength(100, ErrorMessage = "The {0} must be at least {2} and at max {1} characters long.", MinimumLength = 6)]
+        [DataType(DataType.Password)]
+        [Display(Name = "New password")]
+        public string? NewPassword { get; set; }
+
+        [DataType(DataType.Password)]
+        [Display(Name = "Confirm new password")]
+        [Compare("NewPassword", ErrorMessage = "The new password and confirmation password do not match.")]
+        public string? ConfirmPassword { get; set; }
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\TwoFactorAuthentication.razor ---
+
+﻿@page "/Account/Manage/TwoFactorAuthentication"
+
+@using Microsoft.AspNetCore.Http.Features
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityUserAccessor UserAccessor
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Two-factor authentication (2FA)</PageTitle>
+
+<StatusMessage />
+<h3>Two-factor authentication (2FA)</h3>
+@if (canTrack)
+{
+    if (is2faEnabled)
+    {
+        if (recoveryCodesLeft == 0)
+        {
+            <div class="alert alert-danger">
+                <strong>You have no recovery codes left.</strong>
+                <p>You must <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a> before you can log in with a recovery code.</p>
+            </div>
+        }
+        else if (recoveryCodesLeft == 1)
+        {
+            <div class="alert alert-danger">
+                <strong>You have 1 recovery code left.</strong>
+                <p>You can <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a>.</p>
+            </div>
+        }
+        else if (recoveryCodesLeft <= 3)
+        {
+            <div class="alert alert-warning">
+                <strong>You have @recoveryCodesLeft recovery codes left.</strong>
+                <p>You should <a href="Account/Manage/GenerateRecoveryCodes">generate a new set of recovery codes</a>.</p>
+            </div>
+        }
+
+        if (isMachineRemembered)
+        {
+            <form style="display: inline-block" @formname="forget-browser" @onsubmit="OnSubmitForgetBrowserAsync" method="post">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn-primary">Forget this browser</button>
+            </form>
+        }
+
+        <a href="Account/Manage/Disable2fa" class="btn btn-primary">Disable 2FA</a>
+        <a href="Account/Manage/GenerateRecoveryCodes" class="btn btn-primary">Reset recovery codes</a>
+    }
+
+    <h4>Authenticator app</h4>
+    @if (!hasAuthenticator)
+    {
+        <a href="Account/Manage/EnableAuthenticator" class="btn btn-primary">Add authenticator app</a>
+    }
+    else
+    {
+        <a href="Account/Manage/EnableAuthenticator" class="btn btn-primary">Set up authenticator app</a>
+        <a href="Account/Manage/ResetAuthenticator" class="btn btn-primary">Reset authenticator app</a>
+    }
+}
+else
+{
+    <div class="alert alert-danger">
+        <strong>Privacy and cookie policy have not been accepted.</strong>
+        <p>You must accept the policy before you can enable two factor authentication.</p>
+    </div>
+}
+
+@code {
+    private bool canTrack;
+    private bool hasAuthenticator;
+    private int recoveryCodesLeft;
+    private bool is2faEnabled;
+    private bool isMachineRemembered;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await UserAccessor.GetRequiredUserAsync(HttpContext);
+        canTrack = HttpContext.Features.Get<ITrackingConsentFeature>()?.CanTrack ?? true;
+        hasAuthenticator = await UserManager.GetAuthenticatorKeyAsync(user) is not null;
+        is2faEnabled = await UserManager.GetTwoFactorEnabledAsync(user);
+        isMachineRemembered = await SignInManager.IsTwoFactorClientRememberedAsync(user);
+        recoveryCodesLeft = await UserManager.CountRecoveryCodesAsync(user);
+    }
+
+    private async Task OnSubmitForgetBrowserAsync()
+    {
+        await SignInManager.ForgetTwoFactorClientAsync();
+
+        RedirectManager.RedirectToCurrentPageWithStatus(
+            "The current browser has been forgotten. When you login again from this browser you will be prompted for your 2fa code.",
+            HttpContext);
+    }
+}
+
+
+//--- File: .\Components\Account\Pages\Manage\_Imports.razor ---
+
+﻿@layout ManageLayout
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+
+//--- File: .\Components\Account\Shared\AccountLayout.razor ---
+
+﻿@inherits LayoutComponentBase
+@layout BlazorApp2.Components.Layout.MainLayout
+@inject NavigationManager NavigationManager
+
+@if (HttpContext is null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    @Body
+}
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (HttpContext is null)
+        {
+            // If this code runs, we're currently rendering in interactive mode, so there is no HttpContext.
+            // The identity pages need to set cookies, so they require an HttpContext. To achieve this we
+            // must transition back from interactive mode to a server-rendered page.
+            NavigationManager.Refresh(forceReload: true);
+        }
+    }
+}
+
+
+//--- File: .\Components\Account\Shared\ExternalLoginPicker.razor ---
+
+﻿@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+@if (externalLogins.Length == 0)
+{
+    <div>
+        <p>
+            There are no external authentication services configured. See this <a href="https://go.microsoft.com/fwlink/?LinkID=532715">article
+            about setting up this ASP.NET application to support logging in via external services</a>.
+        </p>
+    </div>
+}
+else
+{
+    <form class="form-horizontal" action="Account/PerformExternalLogin" method="post">
+        <div>
+            <AntiforgeryToken />
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+            <p>
+                @foreach (var provider in externalLogins)
+                {
+                    <button type="submit" class="btn btn-primary" name="provider" value="@provider.Name" title="Log in using your @provider.DisplayName account">@provider.DisplayName</button>
+                }
+            </p>
+        </div>
+    </form>
+}
+
+@code {
+    private AuthenticationScheme[] externalLogins = [];
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        externalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync()).ToArray();
+    }
+}
+
+
+//--- File: .\Components\Account\Shared\ManageLayout.razor ---
+
+﻿@inherits LayoutComponentBase
+@layout AccountLayout
+
+<h1>Manage your account</h1>
+
+<div>
+    <h2>Change your account settings</h2>
+    <hr />
+    <div class="row">
+        <div class="col-md-3">
+            <ManageNavMenu />
+        </div>
+        <div class="col-md-9">
+            @Body
+        </div>
+    </div>
+</div>
+
+
+//--- File: .\Components\Account\Shared\ManageNavMenu.razor ---
+
+﻿@using Microsoft.AspNetCore.Identity
+@using BlazorApp2.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+
+<ul class="nav nav-pills flex-column">
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage" Match="NavLinkMatch.All">Profile</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/Email">Email</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/ChangePassword">Password</NavLink>
+    </li>
+    @if (hasExternalLogins)
+    {
+        <li class="nav-item">
+            <NavLink class="nav-link" href="Account/Manage/ExternalLogins">External logins</NavLink>
+        </li>
+    }
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/TwoFactorAuthentication">Two-factor authentication</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/PersonalData">Personal data</NavLink>
+    </li>
+</ul>
+
+@code {
+    private bool hasExternalLogins;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hasExternalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync()).Any();
+    }
+}
+
+
+//--- File: .\Components\Account\Shared\RedirectToLogin.razor ---
+
+﻿@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        NavigationManager.NavigateTo($"Account/Login?returnUrl={Uri.EscapeDataString(NavigationManager.Uri)}", forceLoad: true);
+    }
+}
+
+
+//--- File: .\Components\Account\Shared\ShowRecoveryCodes.razor ---
+
+﻿<StatusMessage Message="@StatusMessage" />
+<h3>Recovery codes</h3>
+<div class="alert alert-warning" role="alert">
+    <p>
+        <strong>Put these codes in a safe place.</strong>
+    </p>
+    <p>
+        If you lose your device and don't have the recovery codes you will lose access to your account.
+    </p>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        @foreach (var recoveryCode in RecoveryCodes)
+        {
+            <div>
+                <code class="recovery-code">@recoveryCode</code>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string[] RecoveryCodes { get; set; } = [];
+
+    [Parameter]
+    public string? StatusMessage { get; set; }
+}
+
+
+//--- File: .\Components\Account\Shared\StatusMessage.razor ---
+
+﻿@if (!string.IsNullOrEmpty(DisplayMessage))
+{
+    var statusMessageClass = DisplayMessage.StartsWith("Error") ? "danger" : "success";
+    <div class="alert alert-@statusMessageClass" role="alert">
+        @DisplayMessage
+    </div>
+}
+
+@code {
+    private string? messageFromCookie;
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    private string? DisplayMessage => Message ?? messageFromCookie;
+
+    protected override void OnInitialized()
+    {
+        messageFromCookie = HttpContext.Request.Cookies[IdentityRedirectManager.StatusCookieName];
+
+        if (messageFromCookie is not null)
+        {
+            HttpContext.Response.Cookies.Delete(IdentityRedirectManager.StatusCookieName);
+        }
+    }
+}
+
+
+//--- File: .\Components\Layout\MainLayout.razor ---
+
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+
+//--- File: .\Components\Layout\NavMenu.razor ---
+
+﻿@implements IDisposable
+
+@inject NavigationManager NavigationManager
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">BlazorApp2</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="properties">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Недвижимость
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="orders">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Заказ
+            </NavLink>
+        </div>
+            </Authorized>                              
+         </AuthorizeView>                
+
+       @*  <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="counter">
+                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="weather">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
+            </NavLink>
+        </div> *@
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="PropertiesGrid">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> PropertiesGrid
+                    </NavLink>
+                </div>
+
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="ContractsGrid">
+                        <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> ContractsGrid
+                    </NavLink>
+                </div>
+
+            </Authorized>
+        </AuthorizeView>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="auth">
+                <span class="bi bi-lock-nav-menu" aria-hidden="true"></span> Auth Required
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Account/Manage">
+                        <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> @context.User.Identity?.Name
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <form action="Account/Logout" method="post">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="@currentUrl" />
+                        <button type="submit" class="nav-link">
+                            <span class="bi bi-arrow-bar-left-nav-menu" aria-hidden="true"></span> Logout
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Account/Register">
+                        <span class="bi bi-person-nav-menu" aria-hidden="true"></span> Register
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="Account/Login">
+                        <span class="bi bi-person-badge-nav-menu" aria-hidden="true"></span> Login
+                    </NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+
+        
+    </nav>
+</div>
+
+@code {
+    private string? currentUrl;
+
+    protected override void OnInitialized()
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        NavigationManager.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        currentUrl = NavigationManager.ToBaseRelativePath(e.Location);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        NavigationManager.LocationChanged -= OnLocationChanged;
+    }
+}
+
+
+
+//--- File: .\Components\Pages\Auth.razor ---
+
+﻿@page "/auth"
+
+@using Microsoft.AspNetCore.Authorization
+
+@attribute [Authorize]
+
+<PageTitle>Auth</PageTitle>
+
+<h1>You are authenticated</h1>
+
+<AuthorizeView>
+    Hello @context.User.Identity?.Name!
+</AuthorizeView>
+
+
+//--- File: .\Components\Pages\ContractsGrid.razor ---
+
+﻿@page "/ContractsGrid"
+@inject IConfiguration _config
+@rendermode InteractiveServer
+
+<PageTitle>База данных Contracts</PageTitle>
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Data
+@using Syncfusion.Blazor
+@using BlazorApp2.Data
+@using System.Collections
+@inject IJSRuntime JSRuntime
+
+<SfGrid ID="Название" @ref="ContractGrid" TValue="Contract" AllowSorting="true" AllowFiltering="false" AllowGrouping="false" AllowExcelExport="true" AllowPaging="true" Toolbar="@(new List<string>() { "Add","Edit", "Delete", "Update", "Cancel", "Search", "ExcelExport" })">
+    <SfDataManager AdaptorInstance="@typeof(CustomAdaptor)" Adaptor="Adaptors.CustomAdaptor"></SfDataManager>
+    <GridEditSettings AllowEditing="true" AllowDeleting="true" AllowAdding="true" Mode="@EditMode.Normal"></GridEditSettings>
+    <GridEvents OnToolbarClick="ToolbarClickHandler" TValue="Contract"> </GridEvents>
+    <GridColumns>
+        <GridColumn Field=@nameof(Contract.ID) HeaderText="ID" IsPrimaryKey="true" Width="120"></GridColumn>
+        <GridColumn Field=@nameof(Contract.ClientEmail) HeaderText="ClientEmail" ValidationRules="@(new ValidationRules{ Required= true, MinLength = 3 })" ></GridColumn>
+        <GridColumn Field=@nameof(Contract.PropertyID) HeaderText="PropertyID" ></GridColumn>
+        <GridColumn Field=@nameof(Contract.ContractDate) HeaderText="ContractDate" ></GridColumn>
+    </GridColumns>
+</SfGrid>
+
+@code {
+    SfGrid<Contract> ContractGrid;
+    private Lazy<IJSObjectReference> JSModule = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        JSModule = new(await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./JS/JavaScript.js"));
+        //Console.WriteLine(JSModule.Value);
+    }
+
+    public async Task ToolbarClickHandler(Syncfusion.Blazor.Navigations.ClickEventArgs args)
+    {
+        //Console.WriteLine("Попытка получить");
+        try
+        {
+            //Console.WriteLine(args.Item.Id);
+            if (args.Item.Id == "Название_excelexport") //Id is combination of Grid's ID and itemname
+            {
+                //await this.PlayersGrid.ExcelExport();
+                Console.WriteLine("Конвертирование");
+
+                ExcelExportProperties ExcelProperties = new ExcelExportProperties();
+                MemoryStream streamDoc = await ContractGrid.ExportToExcelAsync(asMemoryStream: true);
+                //MemoryStream copyOfStreamDoc1 = new MemoryStream(streamDoc.ToArray());
+                // string filePaths = "C:Users/User/Downloads/Players.xlsx";
+                // using (FileStream fileStream = File.Create(filePaths))
+                // 
+                //     copyOfStreamDoc1.CopyTo(fileStream);
+                // }
+                await JSModule.Value.InvokeVoidAsync("saveAsFile", new object[] { "Orders.xlsx", Convert.ToBase64String(streamDoc.ToArray()), true });
+
+                Console.WriteLine("Скачивание");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            throw;
+        }
+    }
+
+    public class CustomAdaptor : DataAdaptor
+    {
+        public ContractsData OrderService = new ContractsData();
+
+        public override async Task<object> ReadAsync(DataManagerRequest DataManagerRequest, string Key = null)
+        {
+            Console.WriteLine("ReadAsync 1");
+            IEnumerable<Contract> DataSource = await OrderService.GetOrdersAsync();
+            Console.WriteLine("ReadAsync 2");
+            // Handling Searching in CustomAdaptor.
+            if (DataManagerRequest.Search != null && DataManagerRequest.Search.Count > 0)
+            {
+                // Searching
+                DataSource = DataOperations.PerformSearching(DataSource, DataManagerRequest.Search);
+            }
+            // Handling Filtering in CustomAdaptor.
+            if (DataManagerRequest.Where != null && DataManagerRequest.Where.Count > 0)
+            {
+                // Filtering
+                DataSource = DataOperations.PerformFiltering(DataSource, DataManagerRequest.Where, DataManagerRequest.Where[0].Operator);
+            }
+            // Handling Sorting in CustomAdaptor.
+            if (DataManagerRequest.Sorted != null && DataManagerRequest.Sorted.Count > 0)
+            {
+                // Sorting
+                DataSource = DataOperations.PerformSorting(DataSource, DataManagerRequest.Sorted);
+            }
+            int count = DataSource.Cast<Contract>().Count();
+            // Handling Aggregates in CustomAdaptor.
+            IDictionary<string, object> Aggregates = null;
+            if (DataManagerRequest.Aggregates != null) // Aggregation
+            {
+                Aggregates = DataUtil.PerformAggregation(DataSource, DataManagerRequest.Aggregates);
+            }
+            // Handling Paging in CustomAdaptor. For example, Skip is 0 and Take is equal to page size for first page.
+            if (DataManagerRequest.Skip != 0)
+            {
+                //Paging
+                DataSource = DataOperations.PerformSkip(DataSource, DataManagerRequest.Skip);
+            }
+            if (DataManagerRequest.Take != 0)
+            {
+                DataSource = DataOperations.PerformTake(DataSource, DataManagerRequest.Take);
+            }
+            // Handling Grouping in CustomAdaptor.
+            DataResult DataObject = new DataResult();
+            if (DataManagerRequest.Group != null)
+            {
+                IEnumerable ResultData = DataSource.ToList();
+                // Grouping
+                foreach (var group in DataManagerRequest.Group)
+                {
+                    ResultData = DataUtil.Group<Contract>(ResultData, group, DataManagerRequest.Aggregates, 0, DataManagerRequest.GroupByFormatter);
+                }
+                DataObject.Result = ResultData;
+                DataObject.Count = count;
+                //If both Grouping and Aggregate is enabled
+                if (DataManagerRequest.Aggregates != null)
+                {
+                    DataObject.Aggregates = Aggregates;
+                }
+                //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+                //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+                return DataManagerRequest.RequiresCounts ? DataObject : (object)ResultData;
+            }
+            //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+            //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+            return DataManagerRequest.RequiresCounts ? new DataResult() { Result = DataSource, Count = count, Aggregates = Aggregates } : (object)DataSource;
+        }
+
+        public override async Task<object> InsertAsync(DataManager DataManager, object Value, string Key)
+        {
+            // Given that the Value property consists of newly inserted record details. It can be used to insert the records into database by calling the predefined logic.
+            await OrderService.AddOrderAsync(Value as Contract);
+            return Value;
+        }
+
+        public override async Task<object> UpdateAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the Value property consists of modified record details. It can be used to update the changes into database by calling the predefined logic.
+            await OrderService.UpdateOrderAsync(Value as Contract);
+            return Value;
+        }
+
+        public override async Task<object> RemoveAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the key column is identified nullable interger type in the DataGrid, the primaryColumnValue can be utilized from Value property directly.
+            await OrderService.RemoveOrderAsync(Value as int?);
+            return Value;
+        }
+
+        public override async Task<object> BatchUpdateAsync(DataManager DataManager, object Changed, object Added, object Deleted, string KeyField, string Key, int? DropIndex)
+        {
+            if (Changed != null)
+            {
+                foreach (var record in (IEnumerable<Contract>)Changed)
+                {
+                    await OrderService.UpdateOrderAsync(record as Contract);
+                }
+            }
+            if (Added != null)
+            {
+                foreach (var record in (IEnumerable<Contract>)Added)
+                {
+                    await OrderService.AddOrderAsync(record as Contract);
+                }
+            }
+            if (Deleted != null)
+            {
+                foreach (var record in (IEnumerable<Contract>)Deleted)
+                {
+                    await OrderService.RemoveOrderAsync((record as Contract).ID);
+                }
+            }
+            return Key;
+        }
+    }
+}
+
+//--- File: .\Components\Pages\Counter.razor ---
+
+﻿@page "/counter"
+@rendermode InteractiveServer
+
+<PageTitle>Counter</PageTitle>
+
+<h1>Counter</h1>
+
+<p role="status">Current count: @currentCount</p>
+
+<button class="btn btn-primary" @onclick="IncrementCount">Click me</button>
+
+@code {
+    private int currentCount = 0;
+
+    private void IncrementCount()
+    {
+        currentCount++;
+    }
+}
+
+
+//--- File: .\Components\Pages\Error.razor ---
+
+﻿@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>Error</PageTitle>
+
+<h1 class="text-danger">Error.</h1>
+<h2 class="text-danger">An error occurred while processing your request.</h2>
+
+@if (ShowRequestId)
+{
+    <p>
+        <strong>Request ID:</strong> <code>@RequestId</code>
+    </p>
+}
+
+<h3>Development Mode</h3>
+<p>
+    Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
+</p>
+<p>
+    <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
+    It can result in displaying sensitive information from exceptions to end users.
+    For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
+    and restarting the app.
+</p>
+
+@code{
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}
+
+
+//--- File: .\Components\Pages\Home.razor ---
+
+﻿@page "/"
+
+<PageTitle>Home</PageTitle>
+
+<h1>Hello, world!</h1>
+
+Welcome to your new app.
+
+
+//--- File: .\Components\Pages\OrderPage.razor ---
+
+﻿@page "/orders"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject OrderService OrderService
+@inject AuthenticationStateProvider AuthProvider
+
+@rendermode InteractiveServer
+
+<h3>Мои заказы</h3>
+
+@if (OrderService.Orders.Count == 0)
+{
+        <div class="alert alert-info">
+            Нет активных заказов. <a href="/properties">Выбрать недвижимость</a>
+        </div>
+}
+else
+{
+        <div class="orders-list">
+
+@*         @foreach (var order in OrderService.Orders)
+        {
+            <div class="order-card">
+                <!-- ... остальная разметка ... -->
+                <button @onclick="async () => await ConfirmOrder(order)"
+                        disabled="@order.IsConfirmed">
+                    @(order.IsConfirmed ? "Подтверждено" : "Подтвердить")
+                </button>
+            </div>
+        } *@
+
+        @foreach (var order in OrderService.Orders)
+        {
+                    <div class="order-card @(order.IsConfirmed ? "confirmed" : "")">
+                        <div class="order-content">
+                            <h5>@order.Property.Address</h5>
+                            <p>Цена: @order.Property.Price.ToString("N0") р.</p>
+                            <p>Добавлено: @order.CreatedAt.ToString("dd.MM.yyyy HH:mm")</p>
+
+                            <div class="order-actions">
+                        @if (!order.IsConfirmed)
+                        {
+ @*                                        <button class="btn btn-sm btn-primary"
+                                                @onclick="() => OrderService.ConfirmOrder(order.Id)">
+                                            Подтвердить
+                                        </button> *@
+                                        <button @onclick="async () => await ConfirmOrder(order)"
+                                            disabled="@order.IsConfirmed">
+                                            @(order.IsConfirmed ? "Подтверждено" : "Подтвердить")
+                                        </button>
+
+                        }
+                                <button class="btn btn-sm btn-danger"
+                                        @onclick="() => OrderService.RemoveOrder(order.Id)">
+                                    Удалить
+                                </button>
+                            </div>
+                        </div>
+                        <div class="order-status">
+                    @if (order.IsConfirmed)
+                    {
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    <span>Подтверждено</span>
+                    }
+                        </div>
+                    </div>
+        }
+        </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        OrderService.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        OrderService.OnChange -= StateHasChanged;
+    }
+
+    ///
+    private async Task ConfirmOrder(Order order)
+    {
+        try
+        {
+            await OrderService.ConfirmOrderAsync(order);
+            // Обновить UI
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка: {ex.Message}");
+        }
+    }
+}
+
+//--- File: .\Components\Pages\Properties.razor ---
+
+﻿@page "/properties"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@inject PropertyService PropertyService
+@inject AuthenticationStateProvider AuthProvider
+@inject OrderService OrderService
+@inject NavigationManager Navigation
+
+@rendermode InteractiveServer
+
+<h3>Список недвижимости</h3>
+
+
+@if (properties == null)
+{
+        <p>Загрузка...</p>
+}
+else
+{
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Адрес</th>
+                    <th>Тип</th>
+                    <th>Площадь</th>
+                    <th>Комнат</th>
+                    <th>Этаж</th>
+                    <th>Цена</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var prop in properties)
+            {
+                        <tr>
+                            <td>@prop.Address</td>
+                            <td>@prop.Type</td>
+                            <td>@prop.Area м²</td>
+                            <td>@prop.Rooms</td>
+                            <td>@prop.Floor</td>
+                            <td>@prop.Price.ToString("N0") р.</td>
+                            <td>
+                                <span class="badge bg-@(prop.Status == "В продаже" ? "success" : "secondary")">
+                            @prop.Status
+                                </span>
+                            </td>
+                            <td>
+                                
+                                    <AuthorizeView>
+                                     <Authorized>
+                                        <button class="btn btn-sm btn-success" 
+                                            @onclick="async () => await AddToOrders(prop)">
+                                            Добавить в заказы
+                                        </button>
+                                   </Authorized>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+            }
+            </tbody>
+        </table>
+}
+
+@code {
+    private async Task AddToOrders(Property property)
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        OrderService.AddOrder(property, user.FindFirstValue(ClaimTypes.NameIdentifier));
+    }
+
+    private List<Property> properties;
+
+    protected override async Task OnInitializedAsync()
+    {
+        properties = await PropertyService.GetAllPropertiesAsync();
+    }
+}
+
+//--- File: .\Components\Pages\PropertiesGrid.razor ---
+
+﻿@page "/PropertiesGrid"
+@inject IConfiguration _config
+@rendermode InteractiveServer
+
+<PageTitle>База данных PropertiesGrid</PageTitle>
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Data
+@using Syncfusion.Blazor
+@using BlazorApp2.Data
+@using System.Collections
+@inject IJSRuntime JSRuntime
+
+<SfGrid ID="Название" @ref="ContractGrid" TValue="Property" AllowSorting="true" AllowFiltering="false" AllowGrouping="false" AllowExcelExport="true" AllowPaging="true" Toolbar="@(new List<string>() { "Add","Edit", "Delete", "Update", "Cancel", "Search", "ExcelExport" })">
+    <SfDataManager AdaptorInstance="@typeof(CustomAdaptor)" Adaptor="Adaptors.CustomAdaptor"></SfDataManager>
+    <GridEditSettings AllowEditing="true" AllowDeleting="true" AllowAdding="true" Mode="@EditMode.Normal"></GridEditSettings>
+    <GridEvents OnToolbarClick="ToolbarClickHandler" TValue="Property"> </GridEvents>
+    <GridColumns>
+        <GridColumn Field=@nameof(Property.ID) HeaderText="ID" IsPrimaryKey="true" Width="120"></GridColumn>
+        <GridColumn Field=@nameof(Property.Address) HeaderText="Address" ValidationRules="@(new ValidationRules{ Required= true, MinLength = 3 })" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Type) HeaderText="Type" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Area) HeaderText="Area" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Rooms) HeaderText="Rooms" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Floor) HeaderText="Floor" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Price) HeaderText="Price" ></GridColumn>
+        <GridColumn Field=@nameof(Property.Status) HeaderText="Status" ></GridColumn>
+    </GridColumns>
+</SfGrid>
+
+@code {
+    SfGrid<Property> ContractGrid;
+    private Lazy<IJSObjectReference> JSModule = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        JSModule = new(await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./JS/JavaScript.js"));
+        //Console.WriteLine(JSModule.Value);
+    }
+
+    public async Task ToolbarClickHandler(Syncfusion.Blazor.Navigations.ClickEventArgs args)
+    {
+        //Console.WriteLine("Попытка получить");
+        try
+        {
+            //Console.WriteLine(args.Item.Id);
+            if (args.Item.Id == "Название_excelexport") //Id is combination of Grid's ID and itemname
+            {
+                //await this.PlayersGrid.ExcelExport();
+                Console.WriteLine("Конвертирование");
+
+                ExcelExportProperties ExcelProperties = new ExcelExportProperties();
+                MemoryStream streamDoc = await ContractGrid.ExportToExcelAsync(asMemoryStream: true);
+                //MemoryStream copyOfStreamDoc1 = new MemoryStream(streamDoc.ToArray());
+                // string filePaths = "C:Users/User/Downloads/Players.xlsx";
+                // using (FileStream fileStream = File.Create(filePaths))
+                // 
+                //     copyOfStreamDoc1.CopyTo(fileStream);
+                // }
+                await JSModule.Value.InvokeVoidAsync("saveAsFile", new object[] { "Orders.xlsx", Convert.ToBase64String(streamDoc.ToArray()), true });
+
+                Console.WriteLine("Скачивание");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            throw;
+        }
+    }
+
+    public class CustomAdaptor : DataAdaptor
+    {
+        public PropertiesData OrderService = new PropertiesData();
+
+        public override async Task<object> ReadAsync(DataManagerRequest DataManagerRequest, string Key = null)
+        {
+            Console.WriteLine("ReadAsync 1");
+            IEnumerable<Property> DataSource = await OrderService.GetOrdersAsync();
+            Console.WriteLine("ReadAsync 2");
+            // Handling Searching in CustomAdaptor.
+            if (DataManagerRequest.Search != null && DataManagerRequest.Search.Count > 0)
+            {
+                // Searching
+                DataSource = DataOperations.PerformSearching(DataSource, DataManagerRequest.Search);
+            }
+            // Handling Filtering in CustomAdaptor.
+            if (DataManagerRequest.Where != null && DataManagerRequest.Where.Count > 0)
+            {
+                // Filtering
+                DataSource = DataOperations.PerformFiltering(DataSource, DataManagerRequest.Where, DataManagerRequest.Where[0].Operator);
+            }
+            // Handling Sorting in CustomAdaptor.
+            if (DataManagerRequest.Sorted != null && DataManagerRequest.Sorted.Count > 0)
+            {
+                // Sorting
+                DataSource = DataOperations.PerformSorting(DataSource, DataManagerRequest.Sorted);
+            }
+            int count = DataSource.Cast<Property>().Count();
+            // Handling Aggregates in CustomAdaptor.
+            IDictionary<string, object> Aggregates = null;
+            if (DataManagerRequest.Aggregates != null) // Aggregation
+            {
+                Aggregates = DataUtil.PerformAggregation(DataSource, DataManagerRequest.Aggregates);
+            }
+            // Handling Paging in CustomAdaptor. For example, Skip is 0 and Take is equal to page size for first page.
+            if (DataManagerRequest.Skip != 0)
+            {
+                //Paging
+                DataSource = DataOperations.PerformSkip(DataSource, DataManagerRequest.Skip);
+            }
+            if (DataManagerRequest.Take != 0)
+            {
+                DataSource = DataOperations.PerformTake(DataSource, DataManagerRequest.Take);
+            }
+            // Handling Grouping in CustomAdaptor.
+            DataResult DataObject = new DataResult();
+            if (DataManagerRequest.Group != null)
+            {
+                IEnumerable ResultData = DataSource.ToList();
+                // Grouping
+                foreach (var group in DataManagerRequest.Group)
+                {
+                    ResultData = DataUtil.Group<Property>(ResultData, group, DataManagerRequest.Aggregates, 0, DataManagerRequest.GroupByFormatter);
+                }
+                DataObject.Result = ResultData;
+                DataObject.Count = count;
+                //If both Grouping and Aggregate is enabled
+                if (DataManagerRequest.Aggregates != null)
+                {
+                    DataObject.Aggregates = Aggregates;
+                }
+                //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+                //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+                return DataManagerRequest.RequiresCounts ? DataObject : (object)ResultData;
+            }
+            //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+            //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+            return DataManagerRequest.RequiresCounts ? new DataResult() { Result = DataSource, Count = count, Aggregates = Aggregates } : (object)DataSource;
+        }
+
+        public override async Task<object> InsertAsync(DataManager DataManager, object Value, string Key)
+        {
+            // Given that the Value property consists of newly inserted record details. It can be used to insert the records into database by calling the predefined logic.
+            await OrderService.AddOrderAsync(Value as Property);
+            return Value;
+        }
+
+        public override async Task<object> UpdateAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the Value property consists of modified record details. It can be used to update the changes into database by calling the predefined logic.
+            await OrderService.UpdateOrderAsync(Value as Property);
+            return Value;
+        }
+
+        public override async Task<object> RemoveAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the key column is identified nullable interger type in the DataGrid, the primaryColumnValue can be utilized from Value property directly.
+            await OrderService.RemoveOrderAsync(Value as int?);
+            return Value;
+        }
+
+        public override async Task<object> BatchUpdateAsync(DataManager DataManager, object Changed, object Added, object Deleted, string KeyField, string Key, int? DropIndex)
+        {
+            if (Changed != null)
+            {
+                foreach (var record in (IEnumerable<Property>)Changed)
+                {
+                    await OrderService.UpdateOrderAsync(record as Property);
+                }
+            }
+            if (Added != null)
+            {
+                foreach (var record in (IEnumerable<Property>)Added)
+                {
+                    await OrderService.AddOrderAsync(record as Property);
+                }
+            }
+            if (Deleted != null)
+            {
+                foreach (var record in (IEnumerable<Property>)Deleted)
+                {
+                    await OrderService.RemoveOrderAsync((record as Property).ID);
+                }
+            }
+            return Key;
+        }
+    }
+}
+
+//--- File: .\Components\Pages\Weather.razor ---
+
+﻿@page "/weather"
+@attribute [StreamRendering]
+
+<PageTitle>Weather</PageTitle>
+
+<h1>Weather</h1>
+
+<p>This component demonstrates showing data.</p>
+
+@if (forecasts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var forecast in forecasts)
+            {
+                <tr>
+                    <td>@forecast.Date.ToShortDateString()</td>
+                    <td>@forecast.TemperatureC</td>
+                    <td>@forecast.TemperatureF</td>
+                    <td>@forecast.Summary</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private WeatherForecast[]? forecasts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Simulate asynchronous loading to demonstrate streaming rendering
+        await Task.Delay(500);
+
+        var startDate = DateOnly.FromDateTime(DateTime.Now);
+        var summaries = new[] { "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching" };
+        forecasts = Enumerable.Range(1, 5).Select(index => new WeatherForecast
+        {
+            Date = startDate.AddDays(index),
+            TemperatureC = Random.Shared.Next(-20, 55),
+            Summary = summaries[Random.Shared.Next(summaries.Length)]
+        }).ToArray();
+    }
+
+    private class WeatherForecast
+    {
+        public DateOnly Date { get; set; }
+        public int TemperatureC { get; set; }
+        public string? Summary { get; set; }
+        public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    }
+}
+
+
+//--- File: .\Data\ApplicationDbContext.cs ---
+
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+
+namespace BlazorApp2.Data
+{
+    public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : IdentityDbContext<ApplicationUser>(options)
+    {
+        public DbSet<Property> Properties { get; set; }
+        public DbSet<Contract> Contracts { get; set; }
+    }
+
+    
+}
+
+
+//--- File: .\Data\ApplicationUser.cs ---
+
+using Microsoft.AspNetCore.Identity;
+
+namespace BlazorApp2.Data
+{
+    // Add profile data for application users by adding properties to the ApplicationUser class
+    public class ApplicationUser : IdentityUser
+    {
+    }
+
+}
+
+
+//--- File: .\Data\ContractsData.cs ---
+
+﻿using System.Data;
+using Dapper;
+using MySql.Data.MySqlClient;
+
+namespace BlazorApp2.Data
+{
+    public class ContractsData
+    {
+        readonly string ConnectionString = $"Server=localhost;User Id=dodnet; Password=DoDnetPass*6785%; Database=dodnet_mysql";
+        public async Task<List<Contract>> GetOrdersAsync()
+        {
+            Console.WriteLine("Получение таблицы");
+            string Query = "SELECT * FROM contracts;";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                List<Contract> orders = Connection.Query<Contract>(Query).ToList();
+                Console.WriteLine("таблица получена");
+                return orders;
+            }
+        }
+        public async Task AddOrderAsync(Contract Value)
+        {
+            string query = "INSERT INTO contracts(ID, ClientEmail, PropertyID, ContractDate) VALUES(@ID, @ClientEmail, @PropertyID, @ContractDate)";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                await Connection.ExecuteAsync(query, Value);
+            }
+        }
+
+        public async Task UpdateOrderAsync(Contract Value)
+        {
+            string query = "UPDATE contracts SET ClientEmail = @ClientEmail, PropertyID = @PropertyID, ContractDate=@ContractDate WHERE ID = @ID";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                await Connection.ExecuteAsync(query, Value);
+            }
+        }
+
+        public async Task RemoveOrderAsync(int? Key)
+        {
+            string query = "DELETE FROM contracts WHERE ID = @Название";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                try
+                {
+                    await Connection.ExecuteAsync(query, new { Название = Key });
+                    Console.WriteLine($"Удаление "); // Для диагностики
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"ОШИБКА УДАЛЕНИЯ: {ex.Message}");
+                    throw;
+                }
+            }
+        }
+    }
+}
+
+
+//--- File: .\Data\PropertiesData.cs ---
+
+﻿using System.Data;
+using Dapper;
+using MySql.Data.MySqlClient;
+
+namespace BlazorApp2.Data
+{
+    public class PropertiesData
+    {
+        readonly string ConnectionString = $"Server=localhost;User Id=dodnet; Password=DoDnetPass*6785%; Database=dodnet_mysql";
+        public async Task<List<Property>> GetOrdersAsync()
+        {
+            Console.WriteLine("Получение таблицы");
+            string Query = "SELECT * FROM properties;";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                List<Property> orders = Connection.Query<Property>(Query).ToList();
+                Console.WriteLine("таблица получена");
+                return orders;
+            }
+        }
+        public async Task AddOrderAsync(Property Value)
+        {
+            string query = "INSERT INTO properties(ID, Address, Type, Area, Rooms, Floor, Price, Status) VALUES(@ID, @Address, @Type, @Area, @Rooms, @Floor, @Price, @Status)";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                await Connection.ExecuteAsync(query, Value);
+            }
+        }
+
+        public async Task UpdateOrderAsync(Property Value)
+        {
+            string query = "UPDATE properties SET Address = @Address, Type = @Type, Area = @Area, Rooms = @Rooms, Floor = @Floor, Price = @Price, Status = @Status WHERE ID = @ID";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                Connection.Open();
+                await Connection.ExecuteAsync(query, Value);
+            }
+        }
+
+        public async Task RemoveOrderAsync(int? Key)
+        {
+            string query = "DELETE FROM properties WHERE ID = @Название";
+            using (IDbConnection Connection = new MySqlConnection(ConnectionString))
+            {
+                try
+                {
+                    await Connection.ExecuteAsync(query, new { Название = Key });
+                    Console.WriteLine($"Удаление "); // Для диагностики
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"ОШИБКА УДАЛЕНИЯ: {ex.Message}");
+                    throw;
+                }
+            }
+        }
+    }
+}
+
+
+//--- File: .\Data\Models\Contract.cs ---
+
+﻿public class Contract
+{
+    public int ID { get; set; }
+    public string ClientEmail { get; set; }
+    public int PropertyID { get; set; }
+    public DateTime ContractDate { get; set; }
+}
+
+//--- File: .\Data\Models\Property.cs ---
+
+﻿public class Property
+{
+    public int ID { get; set; }
+    public string Address { get; set; }
+    public string Type { get; set; }
+    public int Area { get; set; }
+    public int Rooms { get; set; }
+    public int Floor { get; set; }
+    public int Price { get; set; }
+    public string Status { get; set; }
+}
+
+//--- File: .\Data\Services\EmailSender.cs ---
+
+﻿using Microsoft.AspNetCore.Identity.UI.Services;
+using System.Net;
+using System.Net.Mail;
+
+public class EmailSender : IEmailSender
+{
+    private readonly SmtpSettings _smtpSettings;
+
+    public EmailSender(IConfiguration configuration)
+    {
+        _smtpSettings = configuration.GetSection("SmtpSettings").Get<SmtpSettings>();
+    }
+
+    public async Task SendEmailAsync(string email, string subject, string htmlMessage)
+    {
+        using (var client = new SmtpClient(_smtpSettings.Server, _smtpSettings.Port))
+        {
+            client.Credentials = new NetworkCredential(
+                _smtpSettings.Username,
+                _smtpSettings.Password
+            );
+            client.EnableSsl = true;
+
+            var mailMessage = new MailMessage
+            {
+                From = new MailAddress(_smtpSettings.FromEmail),
+                Subject = subject,
+                Body = htmlMessage,
+                IsBodyHtml = true
+            };
+            mailMessage.To.Add(email);
+
+            await client.SendMailAsync(mailMessage);
+        }
+    }
+}
+
+public class SmtpSettings
+{
+    public string Server { get; set; }
+    public int Port { get; set; }
+    public string Username { get; set; }
+    public string Password { get; set; }
+    public string FromEmail { get; set; }
+}
+
+//--- File: .\Data\Services\OrderService.cs ---
+
+﻿using BlazorApp2.Data;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.EntityFrameworkCore;
+
+public class OrderService
+{
+    public List<Order> Orders { get; private set; } = new();
+    public event Action OnChange;
+
+    public void AddOrder(Property property, string userId)
+    {
+        // Проверяем, что недвижимость ещё не добавлена
+        if (!Orders.Any(o =>
+            o.UserId == userId &&
+            o.Property.ID == property.ID))
+        {
+            Orders.Add(new Order
+            {
+                Property = property,
+                UserId = userId
+            });
+            NotifyStateChanged();
+        }
+    }
+
+    public void RemoveOrder(Guid orderId)
+    {
+        var order = Orders.FirstOrDefault(o => o.Id == orderId);
+        if (order != null)
+        {
+            Orders.Remove(order);
+            NotifyStateChanged();
+        }
+    }
+
+    public void ConfirmOrder(Guid orderId)
+    {
+        var order = Orders.FirstOrDefault(o => o.Id == orderId);
+        if (order != null)
+        {
+            order.IsConfirmed = true;
+            NotifyStateChanged();
+        }
+    }
+    
+    private void NotifyStateChanged() => OnChange?.Invoke();
+
+
+    ///
+    private readonly ApplicationDbContext _context;
+    private readonly AuthenticationStateProvider _authProvider;
+
+    public OrderService(
+        ApplicationDbContext context,
+        AuthenticationStateProvider authProvider)
+    {
+        _context = context;
+        _authProvider = authProvider;
+    }
+
+    public async Task ConfirmOrderAsync(Order order)
+    {
+        var authState = await _authProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        var contract = new Contract
+        {
+            ClientEmail = user.Identity?.Name,
+            PropertyID = order.Property.ID,
+            ContractDate = DateTime.Now
+        };
+
+        var property = await _context.Properties
+            .FirstOrDefaultAsync(p => p.ID == order.Property.ID);
+
+        property.Status = "Продано";
+        _context.Properties.Update(property);
+
+        _context.Contracts.Add(contract);
+        await _context.SaveChangesAsync();
+
+        order.IsConfirmed = true;
+    }
+}
+
+public class Order
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Property Property { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public string UserId { get; set; }
+    public bool IsConfirmed { get; set; }
+}
+
+
+//--- File: .\Data\Services\PropertyService.cs ---
+
+﻿using BlazorApp2.Data;
+using Microsoft.EntityFrameworkCore;
+
+public class PropertyService
+{
+    private readonly ApplicationDbContext _context;
+
+    public PropertyService(ApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<List<Property>> GetAllPropertiesAsync()
+    {
+        return await _context.Properties.Where(p => p.Status == "В продаже").ToListAsync();
+    }
+}
+

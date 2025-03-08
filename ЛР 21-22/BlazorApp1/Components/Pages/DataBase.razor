@@ -1,0 +1,166 @@
+﻿@page "/database"
+
+@using Dapper;
+@using MySql.Data.MySqlClient;
+@using System.Data;
+
+@inject IConfiguration _config
+
+@rendermode InteractiveServer
+
+<PageTitle>База данных</PageTitle>
+
+<h1>База данных: @databaseName</h1>
+
+<div class="d-flex flex-wrap mb-4">
+<button class="btn btn-success  m-2" @onclick="InsertData">Добавить</button>
+<button class="btn btn-warning  m-2" @onclick="UpdateData">Изменить</button>
+<button class="btn btn-danger  m-2" @onclick="DeleteData">Удалить</button>
+</div>
+
+@if (tableNames == null || tableNames.Count == 0)
+{
+    <p><em>Loading table names...</em></p>
+}
+else
+{
+    <div class="d-flex flex-wrap mb-4">
+    @foreach (var tableName in tableNames)
+    {
+                <button class="btn btn-primary m-2" @onclick="(() => LoadTableData(tableName))">
+        @tableName
+        </button>
+    }
+    </div>
+
+    @if (selectedTableName != null)
+    {
+         <h2>Содержимое таблицы: @selectedTableName</h2>
+        @if (table == null)
+        {
+            <p><em>Loading table data...</em></p>
+        }
+        else if (table.Count == 0)
+        {
+            <p>Таблица пустая.</p>
+        }
+        else
+        {
+            <table class="table table-bordered table-striped">
+            <thead>
+            <tr>
+            @foreach (var columnName in columnNames[selectedTableName])
+            {
+                <th>@columnName</th>
+            }
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in table)
+            {
+                <tr>
+                @foreach (var value in ((IDictionary<string, object>)row).Values)
+                {
+                    <td>@value</td>
+                }
+                </tr>
+            }
+            </tbody>
+            </table>
+        }
+    }
+}
+
+@code {
+    List<string> tableNames = new();
+
+    Dictionary<string, List<string>> columnNames = new Dictionary<string, List<string>>();
+
+    List<dynamic>? table;
+
+    string selectedTableName;
+
+    string databaseName;
+
+    private readonly string ConnectionString = $"Server=127.0.0.1;Port=3306;database=mydb;user id=root;password=MySQLPass6685%";
+
+    private async Task<string> GetDatabaseName()
+    {
+        using var connection = new MySqlConnection(ConnectionString);
+        string sql = "SELECT DATABASE();";
+        return await connection.QuerySingleAsync<string>(sql);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        databaseName = await GetDatabaseName();
+
+        tableNames = await GetTableNames(ConnectionString, databaseName);
+        foreach (var tableName in tableNames)
+        {
+            columnNames[tableName] = await GetColumnNames(ConnectionString, tableName);
+        }
+    }
+
+    public async Task<List<string>> GetTableNames(string connectionString, string databaseName)
+    {
+        using var connection = new MySqlConnection(connectionString);
+        string sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @DatabaseName";
+        return (await connection.QueryAsync<string>(sql, new { DatabaseName = databaseName })).ToList();
+    }
+
+    public async Task<List<string>> GetColumnNames(string connectionString, string tableName)
+    {
+        using var connection = new MySqlConnection(connectionString);
+        string sql = $@"SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = @TableName 
+                    ORDER BY ORDINAL_POSITION";
+        return (await connection.QueryAsync<string>(sql, new { TableName = tableName })).ToList();
+    }
+
+    private async Task LoadTableData(string tableName)
+    {
+        selectedTableName = tableName;
+        string sql = $"SELECT * FROM `{tableName}`;";
+        using var connection = new MySqlConnection(ConnectionString);
+        table = (await connection.QueryAsync(sql)).ToList();
+    }
+
+    public async Task InsertData()
+    {
+        string sql = @"INSERT INTO Поставщик (Название, Телефон, Почта, Адрес)
+                    VALUES (@Название, @Телефон, @Почта, @Адрес);";
+        using (IDbConnection connection = new MySqlConnection(ConnectionString))
+        {
+            await connection.ExecuteAsync(sql, new { Название = "ТестНазвание", Телефон = "ТестТелефон", Почта = "ТестПочта", Адрес = "ТестАдрес" });
+        }
+        await UpdateTable();
+    }
+
+    public async Task UpdateData()
+    {
+        string sql = @"update Поставщик set Адрес = @Адрес 
+                    where Название = @Название";
+        using (IDbConnection connection = new MySqlConnection(ConnectionString))
+        {
+            await connection.ExecuteAsync(sql, new { Название = "ТестНазвание", Адрес = "ТестАдрес2" });
+        }
+        await UpdateTable();
+    }
+
+    public async Task DeleteData()
+    {
+        string sql = @"delete from Поставщик where Название = @Название";
+        using (IDbConnection connection = new MySqlConnection(ConnectionString))
+        {
+            await connection.ExecuteAsync(sql, new { Название = "ТестНазвание" });
+        }
+        await UpdateTable();
+    }
+
+    public async Task UpdateTable()
+    {
+        await LoadTableData(selectedTableName);
+    }
+}

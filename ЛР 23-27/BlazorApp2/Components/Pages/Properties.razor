@@ -1,0 +1,79 @@
+﻿@page "/properties"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@inject PropertyService PropertyService
+@inject AuthenticationStateProvider AuthProvider
+@inject OrderService OrderService
+@inject NavigationManager Navigation
+
+@rendermode InteractiveServer
+
+<h3>Список недвижимости</h3>
+
+
+@if (properties == null)
+{
+        <p>Загрузка...</p>
+}
+else
+{
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Адрес</th>
+                    <th>Тип</th>
+                    <th>Площадь</th>
+                    <th>Комнат</th>
+                    <th>Этаж</th>
+                    <th>Цена</th>
+                    <th>Статус</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var prop in properties)
+            {
+                        <tr>
+                            <td>@prop.Address</td>
+                            <td>@prop.Type</td>
+                            <td>@prop.Area м²</td>
+                            <td>@prop.Rooms</td>
+                            <td>@prop.Floor</td>
+                            <td>@prop.Price.ToString("N0") р.</td>
+                            <td>
+                                <span class="badge bg-@(prop.Status == "В продаже" ? "success" : "secondary")">
+                            @prop.Status
+                                </span>
+                            </td>
+                            <td>
+                                
+                                    <AuthorizeView>
+                                     <Authorized>
+                                        <button class="btn btn-sm btn-success" 
+                                            @onclick="async () => await AddToOrders(prop)">
+                                            Добавить в заказы
+                                        </button>
+                                   </Authorized>
+                                </AuthorizeView>
+                            </td>
+                        </tr>
+            }
+            </tbody>
+        </table>
+}
+
+@code {
+    private async Task AddToOrders(Property property)
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        OrderService.AddOrder(property, user.FindFirstValue(ClaimTypes.NameIdentifier));
+    }
+
+    private List<Property> properties;
+
+    protected override async Task OnInitializedAsync()
+    {
+        properties = await PropertyService.GetAllPropertiesAsync();
+    }
+}

@@ -1,0 +1,96 @@
+﻿@page "/orders"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject OrderService OrderService
+@inject AuthenticationStateProvider AuthProvider
+
+@rendermode InteractiveServer
+
+<h3>Мои заказы</h3>
+
+@if (OrderService.Orders.Count == 0)
+{
+        <div class="alert alert-info">
+            Нет активных заказов. <a href="/properties">Выбрать недвижимость</a>
+        </div>
+}
+else
+{
+        <div class="orders-list">
+
+@*         @foreach (var order in OrderService.Orders)
+        {
+            <div class="order-card">
+                <!-- ... остальная разметка ... -->
+                <button @onclick="async () => await ConfirmOrder(order)"
+                        disabled="@order.IsConfirmed">
+                    @(order.IsConfirmed ? "Подтверждено" : "Подтвердить")
+                </button>
+            </div>
+        } *@
+
+        @foreach (var order in OrderService.Orders)
+        {
+                    <div class="order-card @(order.IsConfirmed ? "confirmed" : "")">
+                        <div class="order-content">
+                            <h5>@order.Property.Address</h5>
+                            <p>Цена: @order.Property.Price.ToString("N0") р.</p>
+                            <p>Добавлено: @order.CreatedAt.ToString("dd.MM.yyyy HH:mm")</p>
+
+                            <div class="order-actions">
+                        @if (!order.IsConfirmed)
+                        {
+ @*                                        <button class="btn btn-sm btn-primary"
+                                                @onclick="() => OrderService.ConfirmOrder(order.Id)">
+                                            Подтвердить
+                                        </button> *@
+                                        <button @onclick="async () => await ConfirmOrder(order)"
+                                            disabled="@order.IsConfirmed">
+                                            @(order.IsConfirmed ? "Подтверждено" : "Подтвердить")
+                                        </button>
+
+                        }
+                                <button class="btn btn-sm btn-danger"
+                                        @onclick="() => OrderService.RemoveOrder(order.Id)">
+                                    Удалить
+                                </button>
+                            </div>
+                        </div>
+                        <div class="order-status">
+                    @if (order.IsConfirmed)
+                    {
+                                    <i class="bi bi-check-circle-fill text-success"></i>
+                                    <span>Подтверждено</span>
+                    }
+                        </div>
+                    </div>
+        }
+        </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        OrderService.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        OrderService.OnChange -= StateHasChanged;
+    }
+
+    ///
+    private async Task ConfirmOrder(Order order)
+    {
+        try
+        {
+            await OrderService.ConfirmOrderAsync(order);
+            // Обновить UI
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Ошибка: {ex.Message}");
+        }
+    }
+}

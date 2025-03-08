@@ -1,0 +1,142 @@
+﻿@page "/PSSIP22"
+
+@rendermode InteractiveServer
+
+<PageTitle>ЛР 22</PageTitle>
+
+<h3>ПССИП ЛР 22</h3>
+
+<div> 
+
+    <h2>Календарь</h2>
+    Год: <br>
+    <input type="number" @bind="Year" placeholder="Year" /> <br>
+    Месяц: <br>
+    <input type="number" @bind="Month" placeholder="Month" /> <br>
+    <button @onclick="ShowCalendar">Клик</button>
+    <div>
+        @if (CalendarOutput != null)
+        {
+                    <pre>@CalendarOutput</pre>
+        }
+    </div>
+
+
+    <h2>Цикл for</h2>
+    @for (int i = 0; i < @VariantNumber + 5; i++)
+    {
+        <p>Беспалов Тимофей</p>
+    }
+
+    <h2>Массив</h2>
+    <button @onclick="ProcessArray">Клик</button>
+    <div>
+        <p>Оригинальный массив: @string.Join(", ", OriginalArray)</p>
+        <p>Модифицированный массив: @string.Join(", ", ModifiedArray)</p>
+        <p>Произвдение отрицательных: @NegativeProduct</p>
+    </div>
+
+    <h2>Операции со строками</h2>
+    <div>
+        <p>S1: "@S1"</p>
+        <p>S2: "@S2"</p>
+        <p>Длина S2: @S2.Length</p>
+        <p>S1 содержит "Гродно"? @ContainsGrodno</p>
+        <p>Символ на позиции @VariantNumber: '@NthChar'</p>
+        <p>ASCII Code: @AsciiCode</p>
+    </div>
+
+    <h2>Пользовательская функция</h2>
+    Введите х: <br>
+    <input type="number" @bind="InputX" placeholder="Enter x" />
+    <button @onclick="CalculateX">Клик</button>
+    <div>
+        <p>Результат: @Task4Result</p>
+    </div>
+
+</div>
+
+@code {
+    // Календарь
+    private int Year;
+    private int Month;
+    private string? CalendarOutput;
+
+    private void ShowCalendar()
+    {
+        if (Year > 0 && Month > 0 && Month <= 12)
+        {
+            var date = new DateTime(Year, Month, 1);
+            CalendarOutput = $"{date:MMMM yyyy}\n" +
+                             "Mo Tu We Th Fr Sa Su\n";
+            int startDay = (int)date.DayOfWeek;
+            if (startDay == 0) startDay = 7;
+
+            CalendarOutput += new string(' ', (startDay - 1) * 3);
+            while (date.Month == Month)
+            {
+                CalendarOutput += $"{date.Day,2} ";
+                if ((int)date.DayOfWeek == 0)
+                    CalendarOutput += "\n";
+                date = date.AddDays(1);
+            }
+        }
+        else
+        {
+            CalendarOutput = "ошибка";
+        }
+    }
+
+    // массивы
+    private int[] OriginalArray = new int[] { };
+    private int[] ModifiedArray = new int[] { };
+    private int NegativeProduct;
+
+    private void ProcessArray()
+    {
+        OriginalArray = new int[10];
+        Random random = new Random();
+        for (int i = 0; i < OriginalArray.Length; i++)
+        {
+            OriginalArray[i] = random.Next(-10, 10);
+        }
+
+        ModifiedArray = (int[])OriginalArray.Clone();
+        NegativeProduct = 1;
+        for (int i = 0; i < ModifiedArray.Length; i++)
+        {
+            if (ModifiedArray[i] < 0)
+            {
+                NegativeProduct *= ModifiedArray[i];
+                ModifiedArray[i] = 100;
+            }
+        }
+    }
+
+    // строки
+    private string S1 = "Я люблю Беларусь";
+    private string S2 = "Я учусь в Политехническом колледже";
+    private int VariantNumber = 4;
+    private bool ContainsGrodno => S1.Contains("Гродно");
+    private char NthChar => S2[VariantNumber - 1];
+    private int AsciiCode => (int)NthChar;
+
+    // функция
+    private double InputX;
+    private string Task4Result;
+
+    private void CalculateX()
+    {
+        
+        if (InputX >= 7)
+        {
+            Task4Result = $"-{InputX * InputX}";
+        }
+        else
+        {
+            if (InputX == 3 || InputX == -3) Task4Result = "деление на ноль.";
+            else Task4Result = $"{Math.Pow(2, -InputX) / (InputX * InputX - 9)}";
+        }
+    }
+}
+

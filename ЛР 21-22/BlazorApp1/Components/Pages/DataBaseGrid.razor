@@ -1,0 +1,184 @@
+﻿@page "/Grid"
+@inject IConfiguration _config
+@rendermode InteractiveServer
+
+<PageTitle>База данных Grid</PageTitle>
+
+@using Syncfusion.Blazor.Grids
+@using Syncfusion.Blazor.Data
+@using Syncfusion.Blazor
+@using Grid_Dapper.Data
+@using System.Collections
+@inject IJSRuntime JSRuntime
+
+<SfGrid ID="Название" @ref="OrderGrid" TValue="Order" AllowSorting="true" AllowFiltering="false" AllowGrouping="false" AllowExcelExport="true" AllowPaging="true" Toolbar="@(new List<string>() { "Add","Edit", "Delete", "Update", "Cancel", "Search", "ExcelExport" })">
+    <SfDataManager AdaptorInstance="@typeof(CustomAdaptor)" Adaptor="Adaptors.CustomAdaptor"></SfDataManager>
+    <GridEditSettings AllowEditing="true" AllowDeleting="true" AllowAdding="true" Mode="@EditMode.Normal"></GridEditSettings>
+    <GridEvents OnToolbarClick="ToolbarClickHandler" TValue="Order"> </GridEvents>
+    <GridColumns>
+        <GridColumn Field=@nameof(Order.Название) HeaderText="Название" IsPrimaryKey="true" Width="120"></GridColumn>
+        <GridColumn Field=@nameof(Order.Телефон) HeaderText="Телефон" ValidationRules="@(new ValidationRules{ Required= true, MinLength = 3 })" ></GridColumn>
+        <GridColumn Field=@nameof(Order.Почта) HeaderText="Почта" ></GridColumn>
+        <GridColumn Field=@nameof(Order.Адрес) HeaderText="Адрес" ></GridColumn>
+    </GridColumns>
+</SfGrid>
+
+@code {
+    SfGrid<Order> OrderGrid;
+    private Lazy<IJSObjectReference> JSModule = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        JSModule = new(await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./JS/JavaScript.js"));
+        //Console.WriteLine(JSModule.Value);
+    }
+
+    public async Task ToolbarClickHandler(Syncfusion.Blazor.Navigations.ClickEventArgs args)
+    {
+        Console.WriteLine("Попытка получить");
+        try
+        {
+            //Console.WriteLine(args.Item.Id);
+            if (args.Item.Id == "Название_excelexport") //Id is combination of Grid's ID and itemname
+            {
+                //await this.PlayersGrid.ExcelExport();
+                Console.WriteLine("Конвертирование");
+
+                ExcelExportProperties ExcelProperties = new ExcelExportProperties();
+                MemoryStream streamDoc = await OrderGrid.ExportToExcelAsync(asMemoryStream: true);
+                //MemoryStream copyOfStreamDoc1 = new MemoryStream(streamDoc.ToArray());
+                // string filePaths = "C:Users/User/Downloads/Players.xlsx";
+                // using (FileStream fileStream = File.Create(filePaths))
+                // 
+                //     copyOfStreamDoc1.CopyTo(fileStream);
+                // }
+                await JSModule.Value.InvokeVoidAsync("saveAsFile", new object[] { "Orders.xlsx", Convert.ToBase64String(streamDoc.ToArray()), true });
+
+                Console.WriteLine("Скачивание");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.ToString());
+            throw;
+        }
+    }
+
+    public class CustomAdaptor : DataAdaptor
+    {
+        public OrderData OrderService = new OrderData();
+
+        public override async Task<object> ReadAsync(DataManagerRequest DataManagerRequest, string Key = null)
+        {
+            Console.WriteLine("ReadAsync 1");
+            IEnumerable<Order> DataSource = await OrderService.GetOrdersAsync();
+            Console.WriteLine("ReadAsync 2");
+            // Handling Searching in CustomAdaptor.
+            if (DataManagerRequest.Search != null && DataManagerRequest.Search.Count > 0)
+            {
+                // Searching
+                DataSource = DataOperations.PerformSearching(DataSource, DataManagerRequest.Search);
+            }
+            // Handling Filtering in CustomAdaptor.
+            if (DataManagerRequest.Where != null && DataManagerRequest.Where.Count > 0)
+            {
+                // Filtering
+                DataSource = DataOperations.PerformFiltering(DataSource, DataManagerRequest.Where, DataManagerRequest.Where[0].Operator);
+            }
+            // Handling Sorting in CustomAdaptor.
+            if (DataManagerRequest.Sorted != null && DataManagerRequest.Sorted.Count > 0)
+            {
+                // Sorting
+                DataSource = DataOperations.PerformSorting(DataSource, DataManagerRequest.Sorted);
+            }
+            int count = DataSource.Cast<Order>().Count();
+            // Handling Aggregates in CustomAdaptor.
+            IDictionary<string, object> Aggregates = null;
+            if (DataManagerRequest.Aggregates != null) // Aggregation
+            {
+                Aggregates = DataUtil.PerformAggregation(DataSource, DataManagerRequest.Aggregates);
+            }
+            // Handling Paging in CustomAdaptor. For example, Skip is 0 and Take is equal to page size for first page.
+            if (DataManagerRequest.Skip != 0)
+            {
+                //Paging
+                DataSource = DataOperations.PerformSkip(DataSource, DataManagerRequest.Skip);
+            }
+            if (DataManagerRequest.Take != 0)
+            {
+                DataSource = DataOperations.PerformTake(DataSource, DataManagerRequest.Take);
+            }
+            // Handling Grouping in CustomAdaptor.
+            DataResult DataObject = new DataResult();
+            if (DataManagerRequest.Group != null)
+            {
+                IEnumerable ResultData = DataSource.ToList();
+                // Grouping
+                foreach (var group in DataManagerRequest.Group)
+                {
+                    ResultData = DataUtil.Group<Order>(ResultData, group, DataManagerRequest.Aggregates, 0, DataManagerRequest.GroupByFormatter);
+                }
+                DataObject.Result = ResultData;
+                DataObject.Count = count;
+                //If both Grouping and Aggregate is enabled
+                if (DataManagerRequest.Aggregates != null)
+                {
+                    DataObject.Aggregates = Aggregates;
+                }
+                //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+                //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+                return DataManagerRequest.RequiresCounts ? DataObject : (object)ResultData;
+            }
+            //Здесь RequiresCount передается со стороны элемента управления, когда требуется выборка данных по требованию, тогда RequiresCount устанавливается как true на стороне компонента.
+            //В приведенном выше случае мы используем пейджинг, поэтому данные загружаются по требованию каждый раз, когда нажимается следующая страница на стороне Blazor DataGrid.
+            return DataManagerRequest.RequiresCounts ? new DataResult() { Result = DataSource, Count = count, Aggregates = Aggregates } : (object)DataSource;
+        }
+
+        public override async Task<object> InsertAsync(DataManager DataManager, object Value, string Key)
+        {
+            // Given that the Value property consists of newly inserted record details. It can be used to insert the records into database by calling the predefined logic.
+            await OrderService.AddOrderAsync(Value as Order);
+            return Value;
+        }
+
+        public override async Task<object> UpdateAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the Value property consists of modified record details. It can be used to update the changes into database by calling the predefined logic.
+            await OrderService.UpdateOrderAsync(Value as Order);
+            return Value;
+        }
+
+        public override async Task<object> RemoveAsync(DataManager DataManager, object Value, string KeyField, string Key)
+        {
+            // Given that the key column is identified nullable interger type in the DataGrid, the primaryColumnValue can be utilized from Value property directly.
+            await OrderService.RemoveOrderAsync(Value as string);
+            return Value;
+        }
+
+        public override async Task<object> BatchUpdateAsync(DataManager DataManager, object Changed, object Added, object Deleted, string KeyField, string Key, int? DropIndex)
+        {
+            if (Changed != null)
+            {
+                foreach (var record in (IEnumerable<Order>)Changed)
+                {
+                    await OrderService.UpdateOrderAsync(record as Order);
+                }
+            }
+            if (Added != null)
+            {
+                foreach (var record in (IEnumerable<Order>)Added)
+                {
+                    await OrderService.AddOrderAsync(record as Order);
+                }
+            }
+            if (Deleted != null)
+            {
+                foreach (var record in (IEnumerable<Order>)Deleted)
+                {
+                    await OrderService.RemoveOrderAsync((record as Order).Название);
+                }
+            }
+            return Key;
+        }
+    }
+}
